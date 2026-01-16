@@ -1,0 +1,13 @@
+---
+# Ops-file to deploy a single zookeeper instance instead of 5
+- type: replace
+  path: /instance_groups/name=zookeeper/instances
+  value: 1
+
+- type: replace
+  path: /instance_groups/name=zookeeper/azs
+  value: [z1]
+
+# Remove smoke-tests errand for simplicity
+- type: remove
+  path: /instance_groups/name=smoke-tests

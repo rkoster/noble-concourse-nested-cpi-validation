@@ -72,3 +72,10 @@
 # Remove garden configuration (incompatible with containerd in Concourse 8.0+)
 - type: remove
   path: /instance_groups/name=concourse/jobs/name=worker/properties/garden
+
+# Configure DNS servers for containerd worker containers
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/containerd?/dns_servers?
+  value:
+    - 8.8.8.8
+    - 1.1.1.1
