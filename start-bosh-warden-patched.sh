@@ -10,6 +10,15 @@ local_bosh_dir="/tmp/local-bosh/director"
 echo "=== Patching GrootFS configuration for Noble (Ubuntu 24.04) compatibility ==="
 echo "Disabling loop device usage to work with cgroup v2..."
 
+# Pre-create GrootFS store directories
+echo "Creating GrootFS store directories..."
+mkdir -p /var/vcap/data/grootfs/store/unprivileged
+mkdir -p /var/vcap/data/grootfs/store/privileged
+chmod 755 /var/vcap/data/grootfs
+chmod 755 /var/vcap/data/grootfs/store
+chmod 755 /var/vcap/data/grootfs/store/unprivileged
+chmod 755 /var/vcap/data/grootfs/store/privileged
+
 GROOTFS_CONFIG="/var/vcap/jobs/garden/config/grootfs_config.yml"
 if [ -f "$GROOTFS_CONFIG" ]; then
   echo "Original GrootFS config:"
