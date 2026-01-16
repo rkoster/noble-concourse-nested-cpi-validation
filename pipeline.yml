@@ -6,6 +6,12 @@ resources:
     source:
       repository: bosh/docker-cpi
 
+  - name: bosh-warden-cpi-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: bosh/warden-cpi
+
   - name: zookeeper-release
     type: git
     icon: github
@@ -47,6 +53,103 @@ jobs:
                 
                 echo "=== Starting BOSH Director with Docker CPI (patched version) ==="
                 start-bosh
+                
+                # Source the environment variables
+                source /tmp/local-bosh/director/env
+                
+                echo "=== BOSH Director Environment ==="
+                echo "BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}"
+                echo "BOSH_CLIENT: ${BOSH_CLIENT}"
+                
+                echo "=== Verifying BOSH Director ==="
+                bosh env
+                
+                echo "=== Cloud Config ==="
+                bosh cloud-config
+                
+                echo "=== Creating and Uploading Zookeeper Release ==="
+                cd zookeeper-release
+                bosh create-release --force --timestamp-version
+                bosh upload-release
+                cd ..
+                
+                echo "=== Uploading Stemcell ==="
+                bosh upload-stemcell --sha1 8fbcaa623769ec29c39f4c8679337a8c95e8e4a8 \
+                  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.632
+                
+                echo "=== Creating ops-file for single instance ==="
+                cat > /tmp/single-instance.yml <<'OPSFILE'
+                ---
+                # Ops-file to deploy a single zookeeper instance instead of 5
+                - type: replace
+                  path: /instance_groups/name=zookeeper/instances
+                  value: 1
+                
+                - type: replace
+                  path: /instance_groups/name=zookeeper/azs
+                  value: [z1]
+                
+                # Remove smoke-tests errand for simplicity
+                - type: remove
+                  path: /instance_groups/name=smoke-tests
+                
+                # Update stemcell to jammy
+                - type: replace
+                  path: /stemcells/alias=default/os
+                  value: ubuntu-jammy
+                OPSFILE
+                
+                echo "=== Deploying Zookeeper (Single Instance) ==="
+                bosh -n deploy \
+                  -d zookeeper \
+                  zookeeper-release/manifests/zookeeper.yml \
+                  -o /tmp/single-instance.yml
+                
+                echo "=== Deployment Status ==="
+                bosh -d zookeeper instances
+                
+                echo "=== Zookeeper VMs ==="
+                bosh -d zookeeper vms
+                
+                echo "=== Testing Zookeeper ==="
+                # SSH into the instance and check zookeeper status
+                bosh -d zookeeper ssh zookeeper/0 -c "
+                  set -e
+                  echo '=== Zookeeper Process Status ==='
+                  sudo /var/vcap/bosh/bin/monit summary
+                  
+                  echo '=== Zookeeper Server Status ==='
+                  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'
+                "
+                
+                echo "=== Cleaning Up ==="
+                bosh -d zookeeper -n delete-deployment
+                
+                echo "=== Pipeline Complete ==="
+
+  - name: deploy-zookeeper-on-warden-bosh
+    plan:
+      - in_parallel:
+          - get: bosh-warden-cpi-image
+          - get: zookeeper-release
+            trigger: false
+
+      - task: start-bosh-and-deploy-zookeeper
+        image: bosh-warden-cpi-image
+        privileged: true
+        config:
+          platform: linux
+          inputs:
+            - name: zookeeper-release
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -euo pipefail
+                
+                echo "=== Starting BOSH Director with Warden CPI ==="
+                /usr/local/bin/start-bosh
                 
                 # Source the environment variables
                 source /tmp/local-bosh/director/env
