@@ -1,0 +1,74 @@
+# Use Director to deploy Concourse for development/testing
+# This ops file converts the create-env style deployment to work with a BOSH director
+
+# Remove networks - networks are defined in cloud-config
+- type: remove
+  path: /networks
+
+# Replace network configuration to use cloud-config with static IP
+- type: replace
+  path: /instance_groups/name=concourse/networks
+  value:
+  - name: default
+    static_ips: [((concourse_static_ip))]
+
+# Use disk type instead of disk_pools
+- type: remove
+  path: /disk_pools
+
+- type: remove
+  path: /instance_groups/name=concourse/persistent_disk_pool
+
+- type: replace
+  path: /instance_groups/name=concourse/persistent_disk_type?
+  value: default
+
+# Use VM type / stemcell instead of resource_pools
+- type: remove
+  path: /resource_pools
+
+- type: remove
+  path: /instance_groups/name=concourse/resource_pool
+
+- type: replace
+  path: /instance_groups/name=concourse/vm_type?
+  value: concourse-large
+
+- type: replace
+  path: /stemcells?/-
+  value:
+    alias: default
+    os: ubuntu-noble
+    version: latest
+
+- type: replace
+  path: /instance_groups/name=concourse/stemcell?
+  value: default
+
+- type: replace
+  path: /instance_groups/name=concourse/azs?
+  value: [z1]
+
+- type: replace
+  path: /update?
+  value:
+    canaries: 0
+    max_in_flight: 1
+    canary_watch_time: 30000-180000
+    update_watch_time: 30000-180000
+
+# Remove create-env specifics
+- type: remove
+  path: /cloud_provider
+
+- type: remove
+  path: /variables/name=mbus_bootstrap_password
+
+# Replace external_url to use variable instead of public_ip
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=web/properties/external_url?
+  value: ((external_url))
+
+# Remove garden configuration (incompatible with containerd in Concourse 8.0+)
+- type: remove
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/garden

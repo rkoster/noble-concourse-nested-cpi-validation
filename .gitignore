@@ -1,0 +1,6 @@
+# BOSH variables with secrets
+vars.yml
+
+# Vendored dependencies
+vendor/
+vendir.lock.yml
