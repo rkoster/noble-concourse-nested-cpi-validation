@@ -15,8 +15,8 @@ if [ -f "$GROOTFS_CONFIG" ]; then
   echo ""
   echo "Applying patches..."
   
-  sed -i 's/store_size_bytes: [0-9]*/store_size_bytes: 0/' "$GROOTFS_CONFIG"
-  sed -i 's/with_direct_io: false/with_direct_io: true/' "$GROOTFS_CONFIG"
+  sed -i 's/  store_size_bytes: [0-9]*/  store_size_bytes: 0/' "$GROOTFS_CONFIG"
+  sed -i 's/  with_direct_io: false/  with_direct_io: true/' "$GROOTFS_CONFIG"
   
   echo ""
   echo "Patched GrootFS config:"
