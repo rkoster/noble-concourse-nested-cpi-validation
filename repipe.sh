@@ -2,34 +2,53 @@
 
 set -euo pipefail
 
+# Script directory for relative paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Check if fly CLI is available
 if ! command -v fly &> /dev/null; then
     echo "Error: fly CLI not found. Please run ./fly-login.sh first."
     exit 1
 fi
 
-# Default values
-TARGET="${CONCOURSE_TARGET:-local}"
-PIPELINE_NAME="${PIPELINE_NAME:-nested-bosh-zookeeper}"
-PIPELINE_FILE="${PIPELINE_FILE:-pipeline.yml}"
-
-echo "=== Setting Concourse Pipeline ==="
-echo "Target: ${TARGET}"
-echo "Pipeline: ${PIPELINE_NAME}"
-echo "Pipeline File: ${PIPELINE_FILE}"
-echo ""
-
-# Check if pipeline file exists
-if [ ! -f "${PIPELINE_FILE}" ]; then
-    echo "Error: Pipeline file '${PIPELINE_FILE}' not found."
+# Check if ytt is available
+if ! command -v ytt &> /dev/null; then
+    echo "Error: ytt not found. Please install ytt: https://carvel.dev/ytt/"
     exit 1
 fi
 
-# Set the pipeline
-fly -t "${TARGET}" set-pipeline \
-    -p "${PIPELINE_NAME}" \
-    -c "${PIPELINE_FILE}" \
-    --non-interactive
+# Default values
+TARGET="${CONCOURSE_TARGET:-local}"
+PIPELINE_NAME="${PIPELINE_NAME:-nested-bosh-zookeeper}"
+PIPELINE_TEMPLATE="${PIPELINE_TEMPLATE:-pipeline-template.yml}"
+
+echo "=== Processing Pipeline Template with ytt ==="
+echo "Template: ${PIPELINE_TEMPLATE}"
+echo ""
+
+# Check if pipeline template exists
+if [ ! -f "${SCRIPT_DIR}/${PIPELINE_TEMPLATE}" ]; then
+    echo "Error: Pipeline template '${PIPELINE_TEMPLATE}' not found."
+    exit 1
+fi
+
+# Check if start-bosh-patched.sh exists
+if [ ! -f "${SCRIPT_DIR}/start-bosh-patched.sh" ]; then
+    echo "Error: start-bosh-patched.sh not found."
+    exit 1
+fi
+
+# Process template with ytt and set the pipeline
+echo "=== Setting Concourse Pipeline ==="
+echo "Target: ${TARGET}"
+echo "Pipeline: ${PIPELINE_NAME}"
+echo ""
+
+ytt -f "${SCRIPT_DIR}/${PIPELINE_TEMPLATE}" --data-value-file start_bosh_script="${SCRIPT_DIR}/start-bosh-patched.sh" | \
+    fly -t "${TARGET}" set-pipeline \
+        -p "${PIPELINE_NAME}" \
+        -c /dev/stdin \
+        --non-interactive
 
 echo ""
 echo "=== Unpausing Pipeline ==="

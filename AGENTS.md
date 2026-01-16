@@ -8,8 +8,11 @@ This is a BOSH operations repository focused on:
 - Deploying Concourse CI via BOSH director
 - Creating Concourse pipelines that spin up nested BOSH directors using docker-cpi
 - Testing deployment workflows with zookeeper-release as a validation target
+- Validating nested containerization on Ubuntu Noble (24.04) with cgroup v2
 
-**Tech Stack**: Bash scripting, BOSH manifests (YAML), Concourse pipelines (YAML), vendir for dependency management
+**Tech Stack**: Bash scripting, BOSH manifests (YAML), Concourse pipelines (YAML/YTT), vendir for dependency management
+
+**Key Achievement**: Successfully runs nested BOSH director in Docker inside Concourse worker container with cgroup v2 support
 
 ## Build/Run/Test Commands
 
@@ -17,6 +20,12 @@ This is a BOSH operations repository focused on:
 ```bash
 # Load direnv environment (adds bin/ to PATH)
 direnv allow
+
+# Source BOSH environment credentials for lab director
+source bosh.env
+
+# Verify BOSH connection
+bosh env
 
 # Install dependencies (fetch vendored manifests)
 vendir sync
@@ -61,12 +70,6 @@ bosh -d concourse ssh -c "sudo tail -100 /var/vcap/sys/log/worker/worker.stderr.
 bosh -d concourse delete-deployment -n
 ```
 
-### Testing
-There are no automated tests in this repository. Validation is done by:
-1. Deploying Concourse successfully: `./deploy-concourse.sh`
-2. Setting pipeline successfully: `./repipe.sh`
-3. Running pipeline job: `fly -t local trigger-job -j nested-bosh-zookeeper/deploy-zookeeper-on-docker-bosh -w`
-
 ## Code Style Guidelines
 
 ### Shell Scripts
@@ -88,25 +91,16 @@ There are no automated tests in this repository. Validation is done by:
 #!/bin/bash
 set -eu
 
-# Script-level constants
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Configuration with defaults
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-concourse}"
 
-# Main logic
 echo "Starting deployment..."
 ```
 
 **Error Handling**:
 - Check command availability: `if ! command -v fly &> /dev/null; then`
-- Validate file existence before using: `if [ ! -f "${FILE}" ]; then`
-- Use meaningful error messages: `echo "Error: Pipeline file '${PIPELINE_FILE}' not found."`
-
-**Output**:
-- Use `echo` for user-facing messages
-- Group related output with section headers: `echo "=== Deploying Concourse ==="`
-- Show configuration values before execution for transparency
+- Validate file existence: `if [ ! -f "${FILE}" ]; then`
+- Use meaningful error messages: `echo "Error: Pipeline file not found."`
 
 ### YAML Files
 
@@ -117,14 +111,10 @@ echo "Starting deployment..."
 
 **Ops File Structure**:
 ```yaml
-# Use Director to deploy Concourse for development/testing
-# This ops file converts the create-env style deployment to work with a BOSH director
-
-# Remove networks - networks are defined in cloud-config
+# Comments explain purpose
 - type: remove
   path: /networks
 
-# Replace network configuration to use cloud-config with static IP
 - type: replace
   path: /instance_groups/name=concourse/networks
   value:
@@ -132,28 +122,34 @@ echo "Starting deployment..."
     static_ips: [((concourse_static_ip))]
 ```
 
-**Concourse Pipelines**:
-- Use inline task configurations (not external task files)
-- Resources must be remote or from container images (no local file dependencies)
-- Use heredocs for ops-files or configuration within tasks:
+**YTT Templating Pattern** (for embedding scripts in pipelines):
 ```yaml
-- task: example
-  config:
-    run:
-      path: bash
-      args:
-        - -c
-        - |
-          cat > /tmp/ops-file.yml <<'EOF'
-          ---
-          - type: replace
-            path: /some/path
-            value: some_value
-          EOF
+#@ load("@ytt:data", "data")
+#@ load("@ytt:base64", "base64")
+#@ script_b64 = base64.encode(data.values.my_script)
+
+jobs:
+  - task: example
+    config:
+      run:
+        args:
+          - -c
+          - #@ "base64 -d > /tmp/script.sh <<'B64'\n" + script_b64 + "\nB64\n"
+```
+Process: `ytt -f template.yml --data-value-file my_script=script.sh | fly set-pipeline ...`
+
+**Concourse Inline Configuration**:
+```bash
+cat > /tmp/ops-file.yml <<'EOF'
+---
+- type: replace
+  path: /some/path
+  value: some_value
+EOF
 ```
 
 **Variable Naming**:
-- BOSH variables: `lower_snake_case` (e.g., `concourse_static_ip`, `external_url`)
+- BOSH variables: `lower_snake_case` (e.g., `concourse_static_ip`)
 - Environment variables in scripts: `UPPER_SNAKE_CASE`
 
 ### Git Conventions
@@ -170,16 +166,18 @@ echo "Starting deployment..."
 
 **What to Commit**:
 - ✅ Scripts, manifests, ops-files, pipeline definitions
-- ❌ Generated secrets (`vars.yml`)
+- ✅ Concourse vars file (`vars.yml`) - committed for long-running deployment
+- ✅ BOSH environment credentials (`bosh.env`) - committed for long-running lab environment
 - ❌ Vendored dependencies (`vendor/`, `vendir.lock.yml`)
 - ❌ Downloaded binaries (`bin/`)
+- ❌ Backup files (`*.bak`, `*.b64`, `*.tmp`)
 
 ## Key Technical Patterns
 
 ### BOSH Operations
 - Always use ops-files for environment-specific customization (never modify vendored manifests)
 - Use named cloud-configs for deployment-specific VM types: `bosh update-config --type=cloud --name=concourse`
-- Store generated secrets in `vars.yml` with `--vars-store` flag (gitignored)
+- Store generated secrets in `vars.yml` with `--vars-store` flag (committed for long-running deployment)
 - Use `bosh interpolate` to extract values from vars-store: `bosh interpolate vars.yml --path=/password`
 
 ### Concourse Patterns
@@ -188,12 +186,6 @@ echo "Starting deployment..."
 - DNS configuration: Use `containerd.dns_servers` property, not `garden.dns_servers`
 - Pipelines should use remote resources only (GitHub repos, Docker images)
 - Inline ops-files and configuration using heredocs in task scripts
-
-### Common Pitfalls
-1. **DNS in nested environments**: Worker containers need explicit DNS servers configured via `containerd.dns_servers`
-2. **Garden vs Containerd**: Don't set garden properties with containerd runtime
-3. **Pipeline resources**: Never reference local repository in pipeline (use remote resources or inline content)
-4. **Variable quoting**: Always quote paths with spaces in bash: `mkdir "path with spaces"` not `mkdir path with spaces`
 
 ## Environment Variables
 
@@ -209,27 +201,3 @@ Optional overrides:
 - `EXTERNAL_URL`: Override external URL (default: `http://10.246.0.21:8080`)
 - `CONCOURSE_TARGET`: Override fly target name (default: `local`)
 - `PIPELINE_NAME`: Override pipeline name (default: `nested-bosh-zookeeper`)
-
-## File Organization
-
-```
-.
-├── ops-files/              # BOSH ops-files for customization
-│   ├── concourse-dev.yml   # Convert lite deployment to director-based
-│   └── zookeeper-single-instance.yml  # Single instance configuration
-├── deploy-concourse.sh     # Deploy Concourse to BOSH director
-├── fly-login.sh           # Download fly CLI and login to Concourse
-├── repipe.sh              # Set and unpause pipeline
-├── pipeline.yml           # Concourse pipeline for nested BOSH testing
-├── cloud-config-concourse.yml  # Named cloud-config with VM types
-├── vendir.yml             # Dependency management configuration
-├── .envrc                 # Direnv configuration (adds bin/ to PATH)
-└── vendor/                # Vendored manifests (gitignored, managed by vendir)
-```
-
-## Additional Notes
-
-- This repository targets Ubuntu Noble (24.04) stemcells
-- Uses nested CPI architecture (likely Incus/LXD based on cloud properties)
-- Network subnet: `10.246.0.0/16` (static IPs: `10.246.0.21-10.246.0.100`)
-- Concourse VM: 8 CPU, 32GB RAM (instance_type: `c8-m32`)

@@ -2,4 +2,4 @@ vm_types:
 - name: concourse-large
   cloud_properties:
     instance_type: c8-m32
-    ephemeral_disk: 51200
+    ephemeral_disk: 102400

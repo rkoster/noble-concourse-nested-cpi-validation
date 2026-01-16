@@ -1,6 +1,54 @@
 {
   "lockfile_version": "1",
   "packages": {
+    "bosh-cli@latest": {
+      "last_modified": "2025-12-31T03:27:36Z",
+      "resolved": "github:NixOS/nixpkgs/f665af0cdb70ed27e1bd8f9fdfecaf451260fc55#bosh-cli",
+      "source": "devbox-search",
+      "version": "7.9.15",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/fg4mdz8v8ncf6xmb5angj8aj9wjzjmm4-bosh-cli-7.9.15",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/fg4mdz8v8ncf6xmb5angj8aj9wjzjmm4-bosh-cli-7.9.15"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/iiws9kjbv8n16lyx5m5p52v8s6djzl57-bosh-cli-7.9.15",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/iiws9kjbv8n16lyx5m5p52v8s6djzl57-bosh-cli-7.9.15"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zk93w3h8vg12dqji5ccjrx2aghvg5xz1-bosh-cli-7.9.15",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zk93w3h8vg12dqji5ccjrx2aghvg5xz1-bosh-cli-7.9.15"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/vnj5y5kr8f06cfn33aszq5vx4a2qmqgi-bosh-cli-7.9.15",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/vnj5y5kr8f06cfn33aszq5vx4a2qmqgi-bosh-cli-7.9.15"
+        }
+      }
+    },
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
       "last_modified": "2026-01-13T11:13:53Z",
       "resolved": "github:NixOS/nixpkgs/61db79b0c6b838d9894923920b612048e1201926?lastModified=1768302833&narHash=sha256-h5bRFy9bco%2B8QcK7rGoOiqMxMbmn21moTACofNLRMP4%3D"
