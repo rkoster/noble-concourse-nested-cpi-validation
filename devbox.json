@@ -11,6 +11,18 @@
     "scripts": {
       "test": [
         "echo \"Error: no test specified\" && exit 1"
+      ],
+      "bosh-env": [
+        "source /__w/rubionic-workspace/rubionic-workspace/opencode-workspace/rkoster-noble-concourse-nested-cpi-validation/bosh.env && bosh env"
+      ],
+      "fly-login": [
+        "./fly-login.sh"
+      ],
+      "repipe": [
+        "./repipe.sh"
+      ],
+      "trigger-warden-job": [
+        "source bosh.env && fly -t local trigger-job -j nested-bosh-zookeeper/deploy-zookeeper-on-warden-bosh -w"
       ]
     }
   }
