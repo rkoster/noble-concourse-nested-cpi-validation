@@ -4,3 +4,6 @@ vars.yml
 # Vendored dependencies
 vendor/
 vendir.lock.yml
+
+# Local binaries
+bin/
