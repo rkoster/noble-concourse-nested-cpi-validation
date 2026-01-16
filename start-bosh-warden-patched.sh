@@ -4,6 +4,9 @@ set -e
 
 local_bosh_dir="/tmp/local-bosh/director"
 
+# Run pre-start to generate configuration files
+/var/vcap/jobs/garden/bin/pre-start
+
 echo "=== Patching GrootFS configuration for Noble (Ubuntu 24.04) compatibility ==="
 echo "Disabling loop device usage to work with cgroup v2..."
 
@@ -24,7 +27,6 @@ if [ -f "$GROOTFS_CONFIG" ]; then
   echo ""
 fi
 
-/var/vcap/jobs/garden/bin/pre-start
 /var/vcap/jobs/garden/bin/garden_ctl start &
 /var/vcap/jobs/garden/bin/post-start
 
