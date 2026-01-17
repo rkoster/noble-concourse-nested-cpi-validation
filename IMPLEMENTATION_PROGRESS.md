@@ -295,3 +295,46 @@ If testing reveals issues:
 - Check containerd daemon logs
 - Verify Garden configuration is correct
 - Test containerd directly before BOSH integration
+
+---
+
+## Testing Session - 2026-01-17
+
+### Build #1 - Stuck Due to Configuration Issues ❌
+
+**Issue**: Build got stuck because of circular dependency in pipeline configuration
+- The `build-warden-cpi-containerd-image` job tried to `get: warden-cpi-containerd-image` after building
+- This created a dependency on a resource that didn't exist yet (the job itself was supposed to create it)
+- Build was stuck waiting for a resource that would never appear
+
+### Build #2 - Configuration Fixed, In Progress 🧪
+
+**Fixes Applied**:
+1. Removed `trigger: true` from `warden-cpi-repo` (changed to manual triggering)
+2. Removed problematic `get: warden-cpi-containerd-image` step after docker push
+3. Removed unused `bosh-cli-image` resource
+4. Removed `passed: [build-warden-cpi-containerd-image]` constraint in deployment job
+5. Switched to `ubuntu:noble` base image with `image_resource` instead of separate image
+
+**Commits**:
+- `6d71413` - fix: remove circular dependency in image build job
+- `bf81352` - fix: remove unused bosh-cli-image resource
+
+**Current Status**: Build #2 triggered and running
+**Build URL**: http://10.246.0.21:8080/teams/main/pipelines/nested-bosh-zookeeper/jobs/build-warden-cpi-containerd-image/builds/2
+
+**Expected Duration**: ~10-15 minutes for image build
+
+---
+
+## Next Steps
+
+Once build #2 completes:
+1. Verify image was pushed to `10.246.0.21:5000/warden-cpi-containerd:latest`
+2. Trigger deployment test: `fly -t local trigger-job -j nested-bosh-zookeeper/deploy-zookeeper-on-warden-containerd -w`
+3. Monitor for:
+   - ✅ Containerd daemon starts
+   - ✅ No XFS filesystem errors
+   - ✅ No loop device errors
+   - ✅ BOSH director starts with warden-cpi
+   - ✅ Zookeeper deploys successfully
