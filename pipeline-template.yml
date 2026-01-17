@@ -174,29 +174,69 @@ jobs:
                       -v outbound_network_name=NatNetwork \
                       -v garden_host=127.0.0.1 > "${local_bosh_dir}/bosh-director.yml"
                     
-                    echo "=== Debugging: Checking CPI installation location ==="
-                    find /root/.bosh -name "cpi" -type f 2>/dev/null | head -5 || echo "No CPI files found yet"
+                    echo "=== Debugging: Inspecting warden CPI release structure ==="
+                    echo "--- Warden CPI release tarball location ---"
+                    ls -lh /usr/local/releases/warden-cpi.tgz
                     
-                    bosh create-env "${local_bosh_dir}/bosh-director.yml" \
+                    echo "--- Extracting warden CPI release to inspect structure ---"
+                    mkdir -p /tmp/warden-cpi-inspect
+                    tar -xzf /usr/local/releases/warden-cpi.tgz -C /tmp/warden-cpi-inspect
+                    echo "--- Top-level contents of warden CPI release ---"
+                    ls -la /tmp/warden-cpi-inspect/
+                    
+                    echo "--- Warden CPI jobs tarball contents ---"
+                    if [ -f /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz ]; then
+                      tar -tzf /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz | head -30
+                      echo "--- Extracting warden_cpi job ---"
+                      mkdir -p /tmp/warden-cpi-job
+                      tar -xzf /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz -C /tmp/warden-cpi-job
+                      echo "--- Warden CPI job structure ---"
+                      ls -laR /tmp/warden-cpi-job/ | head -50
+                      echo "--- Warden CPI job manifest ---"
+                      cat /tmp/warden-cpi-job/job.MF
+                      echo "--- Warden CPI job templates ---"
+                      ls -la /tmp/warden-cpi-job/templates/ || echo "No templates directory"
+                    else
+                      echo "ERROR: warden_cpi.tgz not found in jobs directory"
+                    fi
+                    
+                    echo "=== Running bosh create-env with DEBUG logging ==="
+                    BOSH_LOG_LEVEL=debug bosh create-env "${local_bosh_dir}/bosh-director.yml" \
                          --vars-store="${local_bosh_dir}/creds.yml" \
-                         --state="${local_bosh_dir}/state.json" || {
-                      echo "=== BOSH create-env failed, debugging CPI installation ==="
-                      CPI_PATH=$(find /root/.bosh -name "cpi" -type f 2>/dev/null | head -1)
-                      if [ -n "$CPI_PATH" ]; then
-                        echo "Found CPI at: $CPI_PATH"
-                        echo "=== CPI file details ==="
-                        ls -la "$CPI_PATH"
-                        echo "=== CPI wrapper script (jobs/warden_cpi/bin/cpi) ==="
-                        JOB_CPI=$(find /root/.bosh -path "*/jobs/warden_cpi/bin/cpi" -type f 2>/dev/null | head -1)
-                        if [ -n "$JOB_CPI" ]; then
-                          echo "Found job CPI wrapper at: $JOB_CPI"
-                          ls -la "$JOB_CPI"
-                          echo "=== Job CPI wrapper content ==="
-                          cat "$JOB_CPI"
-                        else
-                          echo "No job CPI wrapper found"
-                        fi
+                         --state="${local_bosh_dir}/state.json" 2>&1 | tee /tmp/bosh-create-env.log || {
+                      echo "=== BOSH create-env failed, analyzing installation ==="
+                      
+                      echo "--- Checking .bosh installations directory structure ---"
+                      find /root/.bosh/installations -type d | head -30 || echo "No installations directory"
+                      
+                      echo "--- Looking for warden CPI installation ---"
+                      find /root/.bosh -name "*warden*" | head -20 || echo "No warden-related files"
+                      
+                      echo "--- All CPI-related files ---"
+                      find /root/.bosh -name "*cpi*" -type f | head -20 || echo "No CPI files found"
+                      
+                      echo "--- Checking if packages were compiled ---"
+                      CPI_PKG_PATH=$(find /root/.bosh -path "*/packages/warden_cpi/bin/cpi" -type f 2>/dev/null | head -1)
+                      if [ -n "$CPI_PKG_PATH" ]; then
+                        echo "Found CPI package binary at: $CPI_PKG_PATH"
+                        ls -lh "$CPI_PKG_PATH"
+                        file "$CPI_PKG_PATH"
+                      else
+                        echo "ERROR: CPI package binary not found"
                       fi
+                      
+                      echo "--- Checking if job was installed ---"
+                      JOB_DIR=$(find /root/.bosh -path "*/jobs/warden_cpi" -type d 2>/dev/null | head -1)
+                      if [ -n "$JOB_DIR" ]; then
+                        echo "Found warden_cpi job directory at: $JOB_DIR"
+                        ls -laR "$JOB_DIR" | head -50
+                      else
+                        echo "ERROR: warden_cpi job directory not found"
+                      fi
+                      
+                      echo "--- Last 100 lines of bosh create-env debug log ---"
+                      tail -100 /tmp/bosh-create-env.log
+                      
                       exit 1
                     }
                     
