@@ -34,12 +34,6 @@ resources:
       password: ((docker_registry_password))
       insecure_registries: ["((docker_registry_host))"]
 
-  - name: bosh-cli-image
-    type: registry-image
-    icon: docker
-    source:
-      repository: bosh/cli2
-
   - name: zookeeper-release
     type: git
     icon: github
