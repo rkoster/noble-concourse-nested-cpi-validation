@@ -108,8 +108,12 @@ jobs:
                   -t ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest \
                   .
                 
-                # Configure Docker daemon for insecure registry
-                echo '{"insecure-registries": ["10.246.0.21:5000"]}' > /etc/docker/daemon.json
+                # Get the default gateway (Docker host from container perspective)
+                DOCKER_HOST_IP=$(ip route | grep default | awk '{print $3}')
+                echo "Docker host IP (registry): ${DOCKER_HOST_IP}"
+                
+                # Configure Docker daemon for insecure registry using host IP
+                echo "{\"insecure-registries\": [\"${DOCKER_HOST_IP}:5000\"]}" > /etc/docker/daemon.json
                 
                 # Restart dockerd to apply config
                 kill $DOCKERD_PID
@@ -126,8 +130,10 @@ jobs:
                   sleep 2
                 done
                 
-                # Push image without login (registry allows it)
-                docker push ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest
+                # Tag image with host IP and push
+                docker tag ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest \
+                  ${DOCKER_HOST_IP}:5000/warden-cpi-containerd:latest
+                docker push ${DOCKER_HOST_IP}:5000/warden-cpi-containerd:latest
                 
                 echo "=== Image built and pushed successfully ==="
                 
