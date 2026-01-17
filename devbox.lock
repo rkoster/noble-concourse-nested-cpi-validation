@@ -148,6 +148,54 @@
           "store_path": "/nix/store/znh44hivf88wqv5bhg7fx702gchaxvlm-vendir-0.45.0"
         }
       }
+    },
+    "ytt@latest": {
+      "last_modified": "2025-12-31T03:27:36Z",
+      "resolved": "github:NixOS/nixpkgs/f665af0cdb70ed27e1bd8f9fdfecaf451260fc55#ytt",
+      "source": "devbox-search",
+      "version": "0.52.2",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/6rkhlvvhz0bhh7rhyy8x40pnzc9aj6pd-ytt-0.52.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/6rkhlvvhz0bhh7rhyy8x40pnzc9aj6pd-ytt-0.52.2"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/wc0zz93axwwlg08dwcfc7xznvq7pa6vj-ytt-0.52.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/wc0zz93axwwlg08dwcfc7xznvq7pa6vj-ytt-0.52.2"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zpy8kngpm99fhiz7j60vdgdyl4dx4ay5-ytt-0.52.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zpy8kngpm99fhiz7j60vdgdyl4dx4ay5-ytt-0.52.2"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/nwqxirja1ryblczfnrdw5i0knbyvls5a-ytt-0.52.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/nwqxirja1ryblczfnrdw5i0knbyvls5a-ytt-0.52.2"
+        }
+      }
     }
   }
 }

@@ -3,7 +3,8 @@
   "packages": [
     "go@latest",
     "bosh-cli@latest",
-    "vendir@latest"
+    "vendir@latest",
+    "ytt@latest"
   ],
   "shell": {
     "init_hook": [
