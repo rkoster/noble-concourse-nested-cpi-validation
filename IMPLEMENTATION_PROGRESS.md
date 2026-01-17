@@ -151,14 +151,84 @@ fly set-pipeline --var docker_registry_password=... --var docker_registry_host=.
 
 ---
 
-### Step 10: End-to-End Testing ⏸️ Pending
+### Step 10: End-to-End Testing ⏳ Ready for Execution
+**Status**: Implementation complete, ready for testing
 **Task**: Test complete pipeline with custom warden-cpi image
 
-**Validation**:
-- Image builds successfully
-- Registry push works
-- Containerd starts properly
-- Zookeeper deploys without XFS errors
+**Testing Steps**:
+
+1. **Deploy Concourse with Docker Registry**:
+   ```bash
+   cd /path/to/noble-concourse-nested-cpi-validation
+   source bosh.env
+   ./deploy-concourse.sh
+   ```
+   - This deploys Concourse with colocated docker-registry
+   - Registry will be available at `10.246.0.21:5000`
+   - Credentials stored in `vars.yml`
+
+2. **Set Pipeline**:
+   ```bash
+   ./fly-login.sh  # Login to Concourse
+   ./repipe.sh     # Set pipeline with registry credentials
+   ```
+   - Pipeline will be named `nested-bosh-zookeeper`
+   - Registry credentials automatically extracted from `vars.yml`
+
+3. **Build Custom Image**:
+   ```bash
+   fly -t local trigger-job \
+     -j nested-bosh-zookeeper/build-warden-cpi-containerd-image \
+     -w
+   ```
+   - Builds warden-cpi image with containerd support
+   - Pushes to local registry: `10.246.0.21:5000/warden-cpi-containerd:latest`
+   - Expected duration: ~15-20 minutes
+
+4. **Test Warden-CPI with Containerd**:
+   ```bash
+   fly -t local trigger-job \
+     -j nested-bosh-zookeeper/deploy-zookeeper-on-warden-containerd \
+     -w
+   ```
+   - Uses custom-built image
+   - Starts containerd daemon
+   - Deploys BOSH director with warden-cpi
+   - Deploys zookeeper for validation
+   - Expected duration: ~10-15 minutes
+
+**Success Criteria**:
+- ✅ Image builds without errors
+- ✅ Image pushes to local registry successfully
+- ✅ Containerd daemon starts in privileged container
+- ✅ BOSH director starts with warden-cpi + containerd
+- ✅ No XFS filesystem errors
+- ✅ No loop device errors
+- ✅ Zookeeper deploys successfully
+- ✅ Zookeeper process is running and responding
+
+**Expected Issues to Debug** (if any):
+1. Containerd socket permissions
+2. Garden configuration path issues
+3. Stemcell compatibility with containerd backend
+4. Networking configuration for nested containers
+
+**Validation Commands**:
+```bash
+# Check image in registry
+curl -u admin:$(bosh int vars.yml --path=/docker_registry_password) \
+  http://10.246.0.21:5000/v2/_catalog
+
+# Check pipeline status
+fly -t local pipelines
+
+# View job logs
+fly -t local watch -j nested-bosh-zookeeper/build-warden-cpi-containerd-image
+fly -t local watch -j nested-bosh-zookeeper/deploy-zookeeper-on-warden-containerd
+
+# Check Concourse worker logs
+bosh -d concourse ssh concourse/0 -c "sudo tail -100 /var/vcap/sys/log/worker/worker.stderr.log"
+```
 
 ---
 
@@ -168,6 +238,60 @@ fly set-pipeline --var docker_registry_password=... --var docker_registry_host=.
 
 ---
 
-**Last Updated**: 2026-01-17 06:42 UTC
-**Current Step**: 1/10
-**Overall Status**: In Progress
+**Last Updated**: 2026-01-17 06:48 UTC
+**Current Step**: 10/10 (Implementation Complete)
+**Overall Status**: ✅ Ready for Testing
+
+---
+
+## Summary
+
+### What Was Accomplished
+
+This implementation adds custom warden-cpi image building capability to enable warden-cpi to work on Ubuntu Noble (24.04) in nested containers.
+
+**Core Innovation**: Replace GrootFS (requires XFS + loop devices) with containerd runtime (uses overlay filesystem).
+
+**Key Files Modified/Created**:
+1. `ops-files/docker-registry.yml` - BOSH ops file for colocated registry
+2. `deploy-concourse.sh` - Updated to include docker-registry ops file
+3. `warden-cpi-containerd/Dockerfile` - Modified to install containerd
+4. `warden-cpi-containerd/install-garden.rb` - Configured Garden for containerd mode
+5. `pipeline-template.yml` - Added image build and deployment jobs
+6. `repipe.sh` - Enhanced to pass registry credentials
+7. `IMPLEMENTATION_PROGRESS.md` - Complete implementation tracking
+
+**Total Commits**: 6
+- 3a742ec - Initial docker-registry ops file
+- 09072f9 - Simplify docker-registry configuration
+- 622a0a5 - Complete Dockerfile modifications (steps 2-5)
+- 6c779d9 - Add modified warden-cpi directory
+- 6afa98a - Add image build job to pipeline
+- 6b022e4 - Add warden-containerd deployment job
+
+### Architecture
+
+**Before (Failed)**:
+```
+Warden-CPI → Garden → runc → GrootFS → XFS (loop device) → ❌ FAILS
+```
+
+**After (Should Work)**:
+```
+Warden-CPI → Garden → containerd → overlayfs snapshotter → ✅ SUCCESS
+```
+
+### Next Actions
+
+Run the testing steps outlined in Step 10 to validate the complete implementation.
+
+If testing succeeds:
+- Document the solution in repository README
+- Update WARDEN_CPI_INVESTIGATION.md with the working solution
+- Consider creating a PR to upstream bosh repository
+
+If testing reveals issues:
+- Debug using the validation commands provided
+- Check containerd daemon logs
+- Verify Garden configuration is correct
+- Test containerd directly before BOSH integration
