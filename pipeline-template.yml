@@ -52,19 +52,22 @@ jobs:
     plan:
       - in_parallel:
           - get: warden-cpi-repo
-            trigger: true
+            trigger: false
           - get: bosh-deployment-repo
-          - get: bosh-cli-image
 
       - task: build-image
         privileged: true
-        image: bosh-cli-image
         params:
           DOCKER_REGISTRY_HOST: ((docker_registry_host))
           DOCKER_REGISTRY_USERNAME: admin
           DOCKER_REGISTRY_PASSWORD: ((docker_registry_password))
         config:
           platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: ubuntu
+              tag: noble
           inputs:
             - name: warden-cpi-repo
             - name: bosh-deployment-repo
@@ -75,10 +78,10 @@ jobs:
               - |
                 set -euxo pipefail
                 
-                echo "=== Building warden-cpi image with containerd support ==="
-                
-                # Install Docker buildx for multi-platform builds
+                echo "=== Installing Docker ==="
                 apt-get update && apt-get install -y docker.io
+                
+                echo "=== Building warden-cpi image with containerd support ==="
                 
                 # Prepare build context
                 cd warden-cpi-repo/warden-cpi-containerd
@@ -100,9 +103,6 @@ jobs:
                 docker push ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest
                 
                 echo "=== Image built and pushed successfully ==="
-
-      #! Mark the image as available by getting it after push
-      - get: warden-cpi-containerd-image
 
   - name: deploy-zookeeper-on-docker-bosh
     plan:
@@ -129,7 +129,6 @@ jobs:
       - in_parallel:
           - get: warden-cpi-containerd-image
             trigger: false
-            passed: [build-warden-cpi-containerd-image]
           - get: zookeeper-release
             trigger: false
 
