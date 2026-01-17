@@ -75,6 +75,27 @@ jobs:
                 echo "=== Installing Docker ==="
                 apt-get update && apt-get install -y docker.io
                 
+                echo "=== Starting Docker daemon ==="
+                mkdir -p /var/lib/docker
+                dockerd --data-root /scratch/docker &
+                DOCKERD_PID=$!
+                
+                # Wait for Docker to be ready
+                echo "Waiting for Docker daemon to start..."
+                for i in {1..30}; do
+                  if docker info >/dev/null 2>&1; then
+                    echo "Docker daemon is ready"
+                    break
+                  fi
+                  echo "Waiting... ($i/30)"
+                  sleep 2
+                done
+                
+                if ! docker info >/dev/null 2>&1; then
+                  echo "ERROR: Docker daemon failed to start"
+                  exit 1
+                fi
+                
                 echo "=== Building warden-cpi image with containerd support ==="
                 
                 # Prepare build context
@@ -97,6 +118,9 @@ jobs:
                 docker push ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest
                 
                 echo "=== Image built and pushed successfully ==="
+                
+                # Cleanup
+                kill $DOCKERD_PID || true
 
   - name: deploy-zookeeper-on-docker-bosh
     plan:
