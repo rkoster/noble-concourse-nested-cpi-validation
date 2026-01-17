@@ -23,7 +23,7 @@ resources:
     icon: github
     source:
       uri: https://github.com/cloudfoundry/bosh-deployment.git
-      branch: main
+      branch: master
 
   - name: warden-cpi-containerd-image
     type: registry-image

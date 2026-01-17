@@ -83,8 +83,17 @@ Build a custom warden-cpi image with containerd runtime to avoid the GrootFS XFS
 
 ---
 
-### Step 6: Push Changes ⏸️ Pending
+### Step 6: Push Changes ✅ Complete
 **Task**: Push Dockerfile changes to forked repository branch
+
+**Status**: Skipped - Not needed with new approach  
+**Details**:
+- Copied modified warden-cpi Dockerfile and supporting files to `warden-cpi-containerd/` in this repository
+- Dockerfile and all dependencies now committed in this repo
+- Build job pulls from this repository directly (no fork needed)
+
+**Commits**:
+- Multiple commits moving from fork approach to in-repo approach
 
 ---
 
@@ -307,23 +316,61 @@ If testing reveals issues:
 - This created a dependency on a resource that didn't exist yet (the job itself was supposed to create it)
 - Build was stuck waiting for a resource that would never appear
 
-### Build #2 - Configuration Fixed, In Progress 🧪
+### Build #2-3 - Stuck in Pending State ❌
 
-**Fixes Applied**:
-1. Removed `trigger: true` from `warden-cpi-repo` (changed to manual triggering)
-2. Removed problematic `get: warden-cpi-containerd-image` step after docker push
-3. Removed unused `bosh-cli-image` resource
-4. Removed `passed: [build-warden-cpi-containerd-image]` constraint in deployment job
-5. Switched to `ubuntu:noble` base image with `image_resource` instead of separate image
+**Issue**: Builds #2 and #3 stuck in "pending" status, never executed
+- Job was paused, needed manual unpausing
+- Even after unpause, builds didn't start executing
+- Likely issue: Docker daemon not running in build container
+
+### Build #4 - Docker Daemon Startup Fix 🧪
+
+**Problem Identified**: 
+- Pipeline task was trying to run `docker build` and `docker push` without starting Docker daemon
+- Task installs `docker.io` package but never starts the `dockerd` process
+- Build would hang waiting for Docker socket
+
+**Fix Applied** (commit `ec2b4a4`):
+1. Start Docker daemon in background: `dockerd --data-root /scratch/docker &`
+2. Wait for Docker to be ready with retry loop (30 attempts, 2s sleep)
+3. Verify Docker is running with `docker info` before proceeding
+4. Store dockerd PID and kill it on cleanup
+
+**Changes**:
+```bash
+# New startup sequence
+mkdir -p /var/lib/docker
+dockerd --data-root /scratch/docker &
+DOCKERD_PID=$!
+
+# Wait loop
+for i in {1..30}; do
+  if docker info >/dev/null 2>&1; then
+    echo "Docker daemon is ready"
+    break
+  fi
+  echo "Waiting... ($i/30)"
+  sleep 2
+done
+
+# Verify or fail
+if ! docker info >/dev/null 2>&1; then
+  echo "ERROR: Docker daemon failed to start"
+  exit 1
+fi
+```
 
 **Commits**:
-- `6d71413` - fix: remove circular dependency in image build job
-- `bf81352` - fix: remove unused bosh-cli-image resource
+- `ec2b4a4` - fix: start Docker daemon before building image in pipeline
 
-**Current Status**: Build #2 triggered and running
-**Build URL**: http://10.246.0.21:8080/teams/main/pipelines/nested-bosh-zookeeper/jobs/build-warden-cpi-containerd-image/builds/2
+**Current Status**: Build #4 triggered, currently running
+**Build URL**: http://10.246.0.21:8080/teams/main/pipelines/nested-bosh-zookeeper/jobs/build-warden-cpi-containerd-image/builds/4
 
-**Expected Duration**: ~10-15 minutes for image build
+**Expected Outcome**:
+- Docker daemon starts successfully in privileged container
+- Image builds with containerd support
+- Image pushes to local registry
+- Build completes in ~10-15 minutes
 
 ---
 
