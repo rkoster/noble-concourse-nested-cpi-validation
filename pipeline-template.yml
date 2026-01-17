@@ -109,7 +109,7 @@ jobs:
                   .
                 
                 # Login to registry  
-                echo "${DOCKER_REGISTRY_PASSWORD}" | docker login \
+                printf '%s\n' "${DOCKER_REGISTRY_PASSWORD}" | docker login \
                   ${DOCKER_REGISTRY_HOST} \
                   -u ${DOCKER_REGISTRY_USERNAME} \
                   --password-stdin
