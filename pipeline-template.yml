@@ -59,17 +59,15 @@ jobs:
       - task: build-image
         privileged: true
         image: bosh-cli-image
-        inputs:
-          - name: warden-cpi-repo
-          - name: bosh-deployment-repo
-        outputs:
-          - name: image
         params:
           DOCKER_REGISTRY_HOST: ((docker_registry_host))
           DOCKER_REGISTRY_USERNAME: admin
           DOCKER_REGISTRY_PASSWORD: ((docker_registry_password))
         config:
           platform: linux
+          inputs:
+            - name: warden-cpi-repo
+            - name: bosh-deployment-repo
           run:
             path: bash
             args:
