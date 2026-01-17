@@ -108,11 +108,13 @@ jobs:
                   -t ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest \
                   .
                 
-                # Login to registry  
-                printf '%s\n' "${DOCKER_REGISTRY_PASSWORD}" | docker login \
+                # Login to registry
+                echo "${DOCKER_REGISTRY_PASSWORD}" > /tmp/docker-password
+                cat /tmp/docker-password | docker login \
                   ${DOCKER_REGISTRY_HOST} \
                   -u ${DOCKER_REGISTRY_USERNAME} \
                   --password-stdin
+                rm -f /tmp/docker-password
                 
                 # Push image
                 docker push ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest
