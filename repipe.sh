@@ -44,10 +44,31 @@ echo "Target: ${TARGET}"
 echo "Pipeline: ${PIPELINE_NAME}"
 echo ""
 
-ytt -f "${SCRIPT_DIR}/${PIPELINE_TEMPLATE}" --data-value-file start_bosh_script="${SCRIPT_DIR}/start-bosh-patched.sh" | \
+# Extract docker registry credentials from vars.yml if it exists
+DOCKER_REGISTRY_PASSWORD=""
+DOCKER_REGISTRY_HOST="${CONCOURSE_STATIC_IP:-10.246.0.21}:5000"
+
+if [ -f "${SCRIPT_DIR}/vars.yml" ]; then
+    echo "Extracting docker registry credentials from vars.yml..."
+    DOCKER_REGISTRY_PASSWORD=$(bosh interpolate "${SCRIPT_DIR}/vars.yml" --path=/docker_registry_password 2>/dev/null || echo "")
+fi
+
+# Build fly command with variables
+FLY_VARS=""
+if [ -n "${DOCKER_REGISTRY_PASSWORD}" ]; then
+    FLY_VARS="--var docker_registry_password=${DOCKER_REGISTRY_PASSWORD} --var docker_registry_host=${DOCKER_REGISTRY_HOST}"
+    echo "Docker registry configured: ${DOCKER_REGISTRY_HOST}"
+else
+    echo "Warning: Docker registry password not found in vars.yml"
+    echo "Pipeline may fail if docker-registry ops file is used"
+fi
+
+ytt -f "${SCRIPT_DIR}/${PIPELINE_TEMPLATE}" \
+    --data-value-file start_bosh_script="${SCRIPT_DIR}/start-bosh-patched.sh" | \
     fly -t "${TARGET}" set-pipeline \
         -p "${PIPELINE_NAME}" \
         -c /dev/stdin \
+        ${FLY_VARS} \
         --non-interactive
 
 echo ""

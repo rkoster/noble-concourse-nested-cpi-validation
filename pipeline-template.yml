@@ -11,6 +11,35 @@ resources:
     source:
       repository: bosh/docker-cpi
 
+  - name: warden-cpi-repo
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/rkoster/noble-concourse-nested-cpi-validation.git
+      branch: main
+
+  - name: bosh-deployment-repo
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/cloudfoundry/bosh-deployment.git
+      branch: main
+
+  - name: warden-cpi-containerd-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/warden-cpi-containerd
+      username: admin
+      password: ((docker_registry_password))
+      insecure_registries: ["((docker_registry_host))"]
+
+  - name: bosh-cli-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: bosh/cli2
+
   - name: zookeeper-release
     type: git
     icon: github
@@ -19,6 +48,61 @@ resources:
       branch: master
 
 jobs:
+  - name: build-warden-cpi-containerd-image
+    plan:
+      - in_parallel:
+          - get: warden-cpi-repo
+            trigger: true
+          - get: bosh-deployment-repo
+          - get: bosh-cli-image
+
+      - task: build-image
+        privileged: true
+        image: bosh-cli-image
+        inputs:
+          - name: warden-cpi-repo
+          - name: bosh-deployment-repo
+        outputs:
+          - name: image
+        params:
+          DOCKER_REGISTRY_HOST: ((docker_registry_host))
+          DOCKER_REGISTRY_USERNAME: admin
+          DOCKER_REGISTRY_PASSWORD: ((docker_registry_password))
+        config:
+          platform: linux
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -euxo pipefail
+                
+                echo "=== Building warden-cpi image with containerd support ==="
+                
+                # Install Docker buildx for multi-platform builds
+                apt-get update && apt-get install -y docker.io
+                
+                # Prepare build context
+                cd warden-cpi-repo/warden-cpi-containerd
+                cp -r ../../bosh-deployment-repo bosh-deployment
+                
+                # Build image
+                docker build \
+                  --build-arg BASE_IMAGE=ubuntu:noble \
+                  -t ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest \
+                  .
+                
+                # Login to registry  
+                echo "${DOCKER_REGISTRY_PASSWORD}" | docker login \
+                  ${DOCKER_REGISTRY_HOST} \
+                  -u ${DOCKER_REGISTRY_USERNAME} \
+                  --password-stdin
+                
+                # Push image
+                docker push ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest
+                
+                echo "=== Image built and pushed successfully ==="
+
   - name: deploy-zookeeper-on-docker-bosh
     plan:
       - in_parallel:
