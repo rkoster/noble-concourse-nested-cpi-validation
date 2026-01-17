@@ -10,6 +10,7 @@ RUN apt-get update -y \
         apparmor \
         ca-certificates \
         containerd \
+        curl \
         iproute2 \
         iptables \
         zlib1g-dev \
