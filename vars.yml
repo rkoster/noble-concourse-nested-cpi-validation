@@ -1,4 +1,5 @@
 concourse_password: a1ru21l0tduteiw4iod2
+docker_registry_password: 8m1ah5h0yn57h0x2y6xq
 postgres_password: 27yda5xhmia72p2ozf92
 token_signing_key:
   private_key: |

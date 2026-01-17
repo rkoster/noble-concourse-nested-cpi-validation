@@ -13,7 +13,7 @@
 - type: replace
   path: /instance_groups/name=concourse/jobs/-
   value:
-    name: docker-registry
+    name: registry
     release: docker-registry
     properties:
       docker_registry:
