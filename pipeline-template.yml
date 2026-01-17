@@ -108,15 +108,25 @@ jobs:
                   -t ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest \
                   .
                 
-                # Login to registry
-                echo "${DOCKER_REGISTRY_PASSWORD}" > /tmp/docker-password
-                cat /tmp/docker-password | docker login \
-                  ${DOCKER_REGISTRY_HOST} \
-                  -u ${DOCKER_REGISTRY_USERNAME} \
-                  --password-stdin
-                rm -f /tmp/docker-password
+                # Configure Docker daemon for insecure registry
+                echo '{"insecure-registries": ["10.246.0.21:5000"]}' > /etc/docker/daemon.json
                 
-                # Push image
+                # Restart dockerd to apply config
+                kill $DOCKERD_PID
+                sleep 2
+                dockerd --data-root /scratch/docker &
+                DOCKERD_PID=$!
+                
+                # Wait for Docker to be ready again
+                for i in {1..15}; do
+                  if docker info >/dev/null 2>&1; then
+                    echo "Docker daemon restarted with insecure registry config"
+                    break
+                  fi
+                  sleep 2
+                done
+                
+                # Push image without login (registry allows it)
                 docker push ${DOCKER_REGISTRY_HOST}/warden-cpi-containerd:latest
                 
                 echo "=== Image built and pushed successfully ==="
