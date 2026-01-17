@@ -106,7 +106,7 @@ jobs:
                 cd warden-cpi-repo/warden-cpi-containerd
                 cp -r ../../bosh-deployment-repo bosh-deployment
                 
-                docker build --build-arg BASE_IMAGE=ubuntu:noble -t warden-cpi-containerd:latest .
+                docker build --no-cache --build-arg BASE_IMAGE=ubuntu:noble -t warden-cpi-containerd:latest .
                 
                 echo "=== Running BOSH deployment in warden-cpi container ==="
                 docker run --privileged \
@@ -117,20 +117,101 @@ jobs:
                     
                     echo "=== Starting containerd daemon ==="
                     mkdir -p /run/containerd
+                    mkdir -p /var/vcap/sys/run/containerd
                     containerd &
                     
                     # Wait for containerd to be ready
                     for i in $(seq 1 30); do
                       if ctr version >/dev/null 2>&1; then
                         echo "containerd is ready"
+                        # Create symlink so Garden can find containerd socket
+                        ln -sf /run/containerd/containerd.sock /var/vcap/sys/run/containerd/containerd.sock
+                        echo "Created symlink for containerd socket"
                         break
                       fi
                       echo "Waiting for containerd... ($i/30)"
                       sleep 1
                     done
                     
-                    echo "=== Starting BOSH Director with Warden CPI (containerd backend) ==="
-                    start-bosh
+                    echo "=== Starting Garden and BOSH Director with Warden CPI (containerd backend) ==="
+                    
+                    # Start Garden manually with better error handling
+                    /var/vcap/jobs/garden/bin/pre-start
+                    /var/vcap/jobs/garden/bin/garden_ctl start &
+                    
+                    # Give Garden time to start
+                    sleep 5
+                    
+                    # Manually check if Garden is responding
+                    echo "=== Checking if Garden API is responding ===" 
+                    for i in $(seq 1 30); do
+                      if curl -f http://127.0.0.1:7777/ping 2>/dev/null; then
+                        echo "Garden is responding!"
+                        break
+                      fi
+                      echo "Attempt $i: Garden not ready yet..."
+                      sleep 2
+                    done
+                    
+                    # Continue with BOSH director deployment
+                    echo "=== Deploying BOSH Director ==="
+                    cd /usr/local/bosh-deployment
+                    export BOSH_DIRECTOR_IP="192.168.56.6"
+                    local_bosh_dir="/tmp/local-bosh/director"
+                    mkdir -p ${local_bosh_dir}
+                    
+                    bosh int bosh.yml \
+                      -o bosh-lite.yml \
+                      -o warden/cpi.yml \
+                      -o uaa.yml \
+                      -o credhub.yml \
+                      -o jumpbox-user.yml \
+                      -o /usr/local/releases/local-releases.yml \
+                      -v director_name=bosh-lite \
+                      -v internal_ip=${BOSH_DIRECTOR_IP} \
+                      -v internal_gw=192.168.56.1 \
+                      -v internal_cidr=192.168.56.0/24 \
+                      -v outbound_network_name=NatNetwork \
+                      -v garden_host=127.0.0.1 > "${local_bosh_dir}/bosh-director.yml"
+                    
+                    echo "=== Debugging: Checking CPI installation location ==="
+                    find /root/.bosh -name "cpi" -type f 2>/dev/null | head -5 || echo "No CPI files found yet"
+                    
+                    bosh create-env "${local_bosh_dir}/bosh-director.yml" \
+                         --vars-store="${local_bosh_dir}/creds.yml" \
+                         --state="${local_bosh_dir}/state.json" || {
+                      echo "=== BOSH create-env failed, debugging CPI installation ==="
+                      CPI_PATH=$(find /root/.bosh -name "cpi" -type f 2>/dev/null | head -1)
+                      if [ -n "$CPI_PATH" ]; then
+                        echo "Found CPI at: $CPI_PATH"
+                        echo "=== CPI file details ==="
+                        ls -la "$CPI_PATH"
+                        echo "=== CPI wrapper script (jobs/warden_cpi/bin/cpi) ==="
+                        JOB_CPI=$(find /root/.bosh -path "*/jobs/warden_cpi/bin/cpi" -type f 2>/dev/null | head -1)
+                        if [ -n "$JOB_CPI" ]; then
+                          echo "Found job CPI wrapper at: $JOB_CPI"
+                          ls -la "$JOB_CPI"
+                          echo "=== Job CPI wrapper content ==="
+                          cat "$JOB_CPI"
+                        else
+                          echo "No job CPI wrapper found"
+                        fi
+                      fi
+                      exit 1
+                    }
+                    
+                    bosh int "${local_bosh_dir}/creds.yml" --path /director_ssl/ca > "${local_bosh_dir}/ca.crt"
+                    
+                    cat <<EOF > "${local_bosh_dir}/env"
+                    export BOSH_ENVIRONMENT="${BOSH_DIRECTOR_IP}"
+                    export BOSH_CLIENT=admin
+                    export BOSH_CLIENT_SECRET=`bosh int "${local_bosh_dir}/creds.yml" --path /admin_password`
+                    export BOSH_CA_CERT="${local_bosh_dir}/ca.crt"
+                    EOF
+                    
+                    source "${local_bosh_dir}/env"
+                    bosh -n update-cloud-config warden/cloud-config.yml
+                    ip route add 10.244.0.0/15 via ${BOSH_DIRECTOR_IP}
                     
                     # Source the environment variables
                     source /tmp/local-bosh/director/env

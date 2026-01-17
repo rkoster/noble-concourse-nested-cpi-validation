@@ -15,7 +15,12 @@ RUN apt-get update -y \
         iptables \
         zlib1g-dev \
         wget \
-        ruby
+        ruby \
+        ruby-dev \
+        build-essential \
+        bash
+
+RUN gem install bundler --no-document
 
 # Install BOSH CLI
 RUN wget -q https://github.com/cloudfoundry/bosh-cli/releases/download/v7.8.4/bosh-cli-7.8.4-linux-amd64 -O /usr/local/bin/bosh \
