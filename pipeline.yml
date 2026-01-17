@@ -232,3 +232,109 @@ jobs:
                 bosh -d zookeeper -n delete-deployment
                 
                 echo "=== Pipeline Complete ==="
+
+  - name: deploy-zookeeper-on-warden-bosh-containerd
+    plan:
+      - in_parallel:
+          - get: bosh-warden-cpi-image
+          - get: zookeeper-release
+            trigger: false
+
+      - task: start-bosh-and-deploy-zookeeper
+        image: bosh-warden-cpi-image
+        privileged: true
+        config:
+          platform: linux
+          inputs:
+            - name: zookeeper-release
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -euo pipefail
+                
+                echo "=== Creating patched start-bosh script with containerd backend ==="
+                cp /usr/local/bin/start-bosh /usr/local/bin/start-bosh.original
+                
+                base64 -d > /usr/local/bin/start-bosh <<'BASE64SCRIPT'
+                IyEvdXNyL2Jpbi9lbnYgYmFzaAoKc2V0IC1lCgpsb2NhbF9ib3NoX2Rpcj0iL3RtcC9sb2NhbC1ib3NoL2RpcmVjdG9yIgoKZWNobyAiPT09IENvbmZpZ3VyaW5nIEdhcmRlbiB0byB1c2UgY29udGFpbmVyZCBiYWNrZW5kIChieXBhc3NpbmcgR3Jvb3RGUykgPT09IgoKIyBFeHBvcnQgZW52aXJvbm1lbnQgdmFyaWFibGUgdG8gZW5hYmxlIGNvbnRhaW5lcmQgbW9kZQpleHBvcnQgR0FSREVOX0NPTlRBSU5FUkRfTU9ERT10cnVlCgojIENyZWF0ZSBjb250YWluZXJkIGRpcmVjdG9yaWVzCm1rZGlyIC1wIC92YXIvdmNhcC9kYXRhL2NvbnRhaW5lcmQvcm9vdApta2RpciAtcCAvdmFyL3ZjYXAvc3lzL3J1bi9jb250YWluZXJkL3N0YXRlCm1rZGlyIC1wIC92YXIvdmNhcC9zeXMvbG9nL2dhcmRlbgoKZWNobyAiPT09IFN0YXJ0aW5nIGNvbnRhaW5lcmQgcnVudGltZSA9PT0iCgojIENyZWF0ZSBjb250YWluZXJkIGNvbmZpZ3VyYXRpb24KY2F0ID4gL3Zhci92Y2FwL2pvYnMvZ2FyZGVuL2NvbmZpZy9jb250YWluZXJkLnRvbWwgPDwnQ09OVEFJTkVSRF9DT05GSUcnCnZlcnNpb24gPSAzCnJvb3QgPSAnL3Zhci92Y2FwL2RhdGEvY29udGFpbmVyZC9yb290JwpzdGF0ZSA9ICcvdmFyL3ZjYXAvc3lzL3J1bi9jb250YWluZXJkL3N0YXRlJwoKIyBEaXNhYmxlIGFsbCBzbmFwc2hvdHRlcnMgZXhjZXB0IG5hdGl2ZSAod2UnbGwgdXNlIG92ZXJsYXlmcyBpbiBwcmFjdGljZSkKIyBUaGUga2V5IGlzIHRoYXQgY29udGFpbmVyZCBkb2Vzbid0IHJlcXVpcmUgWEZTIGxpa2UgR3Jvb3RGUyBkb2VzCmRpc2FibGVkX3BsdWdpbnMgPSBbJ2lvLmNvbnRhaW5lcmQuc25hcHNob3R0ZXIudjEuYXVmcycsCiAgJ2lvLmNvbnRhaW5lcmQuc25hcHNob3R0ZXIudjEuYnRyZnMnLAogICdpby5jb250YWluZXJkLnNuYXBzaG90dGVyLnYxLmRldm1hcHBlcicsCiAgJ2lvLmNvbnRhaW5lcmQuc25hcHNob3R0ZXIudjEuemZzJywKICAnaW8uY29udGFpbmVyZC5ncnBjLnYxLndhbGtpbmcnLAogICdpby5jb250YWluZXJkLmdjLnYxLnNjaGVkdWxlciddCgpvb21fc2NvcmUgPSAtOTk5CgpbZ3JwY10KICBhZGRyZXNzID0gJy92YXIvdmNhcC9zeXMvcnVuL2NvbnRhaW5lcmQvY29udGFpbmVyZC5zb2NrJwoKW2RlYnVnXQogIGFkZHJlc3MgPSAnL3Zhci92Y2FwL3N5cy9ydW4vY29udGFpbmVyZC9kZWJ1Zy5zb2NrJwogIGxldmVsID0gJ2luZm8nCkNPTlRBSU5FUkRfQ09ORklHCgojIFN0YXJ0IGNvbnRhaW5lcmQgaW4gYmFja2dyb3VuZAovdmFyL3ZjYXAvcGFja2FnZXMvY29udGFpbmVyZC9iaW4vY29udGFpbmVyZCAtYyAvdmFyL3ZjYXAvam9icy9nYXJkZW4vY29uZmlnL2NvbnRhaW5lcmQudG9tbCBcCiAgPj4gL3Zhci92Y2FwL3N5cy9sb2cvZ2FyZGVuL2NvbnRhaW5lcmQuc3Rkb3V0LmxvZyBcCiAgMj4+IC92YXIvdmNhcC9zeXMvbG9nL2dhcmRlbi9jb250YWluZXJkLnN0ZGVyci5sb2cgJgoKY29udGFpbmVyZF9waWQ9JCEKZWNobyAkY29udGFpbmVyZF9waWQgPiAvdmFyL3ZjYXAvc3lzL3J1bi9nYXJkZW4vY29udGFpbmVyZC5waWQKCiMgV2FpdCBmb3IgY29udGFpbmVyZCB0byBiZSByZWFkeQplY2hvICJXYWl0aW5nIGZvciBjb250YWluZXJkIHRvIGJlY29tZSBhdmFpbGFibGUuLi4iCmZvciBpIGluIHsxLi4zMH07IGRvCiAgaWYgL3Zhci92Y2FwL3BhY2thZ2VzL2NvbnRhaW5lcmQvYmluL2N0ciAtLWNvbm5lY3QtdGltZW91dCAxMDBtcyBjIGxzICY+L2Rldi9udWxsOyB0aGVuCiAgICBlY2hvICJDb250YWluZXJkIGlzIHJlYWR5ISIKICAgIGJyZWFrCiAgZmkKICBpZiBbICRpIC1lcSAzMCBdOyB0aGVuCiAgICBlY2hvICJFUlJPUjogQ29udGFpbmVyZCBmYWlsZWQgdG8gc3RhcnQgd2l0aGluIDMwIHNlY29uZHMiCiAgICBleGl0IDEKICBmaQogIHNsZWVwIDEKZG9uZQoKZWNobyAiPT09IFN0YXJ0aW5nIEdhcmRlbiB3aXRoIGNvbnRhaW5lcmQgcnVudGltZSA9PT0iCgojIEdhcmRlbiB3aWxsIHVzZSBjb250YWluZXJkIGluc3RlYWQgb2YgcnVuYytHcm9vdEZTCiMgTm8gbmVlZCB0byBydW4gcHJlLXN0YXJ0IHNpbmNlIHdlJ3JlIG5vdCB1c2luZyBHcm9vdEZTCi92YXIvdmNhcC9qb2JzL2dhcmRlbi9iaW4vZ2FyZGVuX2N0bCBzdGFydCAmCnNsZWVwIDUKCiMgVmVyaWZ5IEdhcmRlbiBpcyBydW5uaW5nCmlmICEgcGdyZXAgLWYgImdkbiBzZXJ2ZXIiID4gL2Rldi9udWxsOyB0aGVuCiAgZWNobyAiRVJST1I6IEdhcmRlbiBmYWlsZWQgdG8gc3RhcnQiCiAgZXhpdCAxCmZpCgplY2hvICI9PT0gR2FyZGVuIHN0YXJ0ZWQgc3VjY2Vzc2Z1bGx5IHdpdGggY29udGFpbmVyZCBiYWNrZW5kID09PSIKCmVjaG8gIj09PSBTdGFydGluZyBCT1NIIERpcmVjdG9yIGRlcGxveW1lbnQgPT09IgoKYWRkaXRpb25hbF9vcHNfZmlsZXM9IiIKaWYgWyAiJHtVU0VfTE9DQUxfUkVMRUFTRVM6PSJ0cnVlIn0iICE9ICJmYWxzZSIgXTsgdGhlbgogIGFkZGl0aW9uYWxfb3BzX2ZpbGVzPSItbyAvdXNyL2xvY2FsL3JlbGVhc2VzL2xvY2FsLXJlbGVhc2VzLnltbCIKZmkKCnB1c2hkICR7Qk9TSF9ERVBMT1lNRU5UX1BBVEg6LS91c3IvbG9jYWwvYm9zaC1kZXBsb3ltZW50fSA+IC9kZXYvbnVsbAogIGV4cG9ydCBCT1NIX0RJUkVDVE9SX0lQPSIxOTIuMTY4LjU2LjYiCgogIG1rZGlyIC1wICR7bG9jYWxfYm9zaF9kaXJ9CgogIGJvc2ggaW50IGJvc2gueW1sIFwKICAgIC1vIGJvc2gtbGl0ZS55bWwgXAogICAgLW8gd2FyZGVuL2NwaS55bWwgXAogICAgLW8gdWFhLnltbCBcCiAgICAtbyBjcmVkaHViLnltbCBcCiAgICAtbyBqdW1wYm94LXVzZXIueW1sIFwKICAgICR7YWRkaXRpb25hbF9vcHNfZmlsZXN9IFwKICAgIC12IGRpcmVjdG9yX25hbWU9Ym9zaC1saXRlIFwKICAgIC12IGludGVybmFsX2lwPSR7Qk9TSF9ESVJFQ1RPUl9JUH0gXAogICAgLXYgaW50ZXJuYWxfZ3c9MTkyLjE2OC41Ni4xIFwKICAgIC12IGludGVybmFsX2NpZHI9MTkyLjE2OC41Ni4wLzI0IFwKICAgIC12IG91dGJvdW5kX25ldHdvcmtfbmFtZT1OYXROZXR3b3JrIFwKICAgIC12IGdhcmRlbl9ob3N0PTEyNy4wLjAuMSBcCiAgICAke0B9ID4gIiR7bG9jYWxfYm9zaF9kaXJ9L2Jvc2gtZGlyZWN0b3IueW1sIgoKICBib3NoIGNyZWF0ZS1lbnYgIiR7bG9jYWxfYm9zaF9kaXJ9L2Jvc2gtZGlyZWN0b3IueW1sIiBcCiAgICAgICAtLXZhcnMtc3RvcmU9IiR7bG9jYWxfYm9zaF9kaXJ9L2NyZWRzLnltbCIgXAogICAgICAgLS1zdGF0ZT0iJHtsb2NhbF9ib3NoX2Rpcn0vc3RhdGUuanNvbiIKCiAgYm9zaCBpbnQgIiR7bG9jYWxfYm9zaF9kaXJ9L2NyZWRzLnltbCIgLS1wYXRoIC9kaXJlY3Rvcl9zc2wvY2EgPiAiJHtsb2NhbF9ib3NoX2Rpcn0vY2EuY3J0IgoKICBjYXQgPDxFTlZGSUxFID4gIiR7bG9jYWxfYm9zaF9kaXJ9L2VudiIKZXhwb3J0IEJPU0hfRU5WSVJPTk1FTlQ9IiR7Qk9TSF9ESVJFQ1RPUl9JUH0iCmV4cG9ydCBCT1NIX0NMSUVOVD1hZG1pbgpleHBvcnQgQk9TSF9DTElFTlRfU0VDUkVUPWBib3NoIGludCAiJHtsb2NhbF9ib3NoX2Rpcn0vY3JlZHMueW1sIiAtLXBhdGggL2FkbWluX3Bhc3N3b3JkYApleHBvcnQgQk9TSF9DQV9DRVJUPSIke2xvY2FsX2Jvc2hfZGlyfS9jYS5jcnQiCkVOVkZJTEUKICBzb3VyY2UgIiR7bG9jYWxfYm9zaF9kaXJ9L2VudiIKCiAgYm9zaCAtbiB1cGRhdGUtY2xvdWQtY29uZmlnIHdhcmRlbi9jbG91ZC1jb25maWcueW1sCiAgaXAgcm91dGUgYWRkICAgMTAuMjQ0LjAuMC8xNSB2aWEgJHtCT1NIX0RJUkVDVE9SX0lQfQpwb3BkID4gL2Rldi9udWxsCg==
+                BASE64SCRIPT
+                
+                chmod +x /usr/local/bin/start-bosh
+                
+                echo "=== Starting BOSH Director with Warden CPI + containerd backend ==="
+                /usr/local/bin/start-bosh
+                
+                # Source the environment variables
+                source /tmp/local-bosh/director/env
+                
+                echo "=== BOSH Director Environment ==="
+                echo "BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}"
+                echo "BOSH_CLIENT: ${BOSH_CLIENT}"
+                
+                echo "=== Verifying BOSH Director ==="
+                bosh env
+                
+                echo "=== Cloud Config ==="
+                bosh cloud-config
+                
+                echo "=== Creating and Uploading Zookeeper Release ==="
+                cd zookeeper-release
+                bosh create-release --force --timestamp-version
+                bosh upload-release
+                cd ..
+                
+                echo "=== Uploading Stemcell ==="
+                bosh upload-stemcell --sha1 8fbcaa623769ec29c39f4c8679337a8c95e8e4a8 \
+                  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.632
+                
+                echo "=== Creating ops-file for single instance ==="
+                cat > /tmp/single-instance.yml <<'OPSFILE'
+                ---
+                # Ops-file to deploy a single zookeeper instance instead of 5
+                - type: replace
+                  path: /instance_groups/name=zookeeper/instances
+                  value: 1
+                
+                - type: replace
+                  path: /instance_groups/name=zookeeper/azs
+                  value: [z1]
+                
+                # Remove smoke-tests errand for simplicity
+                - type: remove
+                  path: /instance_groups/name=smoke-tests
+                
+                # Update stemcell to jammy
+                - type: replace
+                  path: /stemcells/alias=default/os
+                  value: ubuntu-jammy
+                OPSFILE
+                
+                echo "=== Deploying Zookeeper (Single Instance) ==="
+                bosh -n deploy \
+                  -d zookeeper \
+                  zookeeper-release/manifests/zookeeper.yml \
+                  -o /tmp/single-instance.yml
+                
+                echo "=== Deployment Status ==="
+                bosh -d zookeeper instances
+                
+                echo "=== Zookeeper VMs ==="
+                bosh -d zookeeper vms
+                
+                echo "=== Testing Zookeeper ==="
+                # SSH into the instance and check zookeeper status
+                bosh -d zookeeper ssh zookeeper/0 -c "
+                  set -e
+                  echo '=== Zookeeper Process Status ==='
+                  sudo /var/vcap/bosh/bin/monit summary
+                  
+                  echo '=== Zookeeper Server Status ==='
+                  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'
+                "
+                
+                echo "=== Cleaning Up ==="
+                bosh -d zookeeper -n delete-deployment
+                
+                echo "=== Pipeline Complete ==="
