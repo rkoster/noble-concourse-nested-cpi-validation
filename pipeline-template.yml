@@ -101,7 +101,7 @@ jobs:
                 
                 echo "=== Image built and pushed successfully ==="
 
-      # Mark the image as available by getting it after push
+      #! Mark the image as available by getting it after push
       - get: warden-cpi-containerd-image
 
   - name: deploy-zookeeper-on-docker-bosh
