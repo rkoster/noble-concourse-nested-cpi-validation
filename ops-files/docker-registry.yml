@@ -1,15 +1,15 @@
-# Deploy docker-registry on the same instance as Concourse
-# This provides a local Docker registry for storing custom images
+# Ops file to enable Docker registry access on port 5000
+# Docker registry will be colocated on Concourse instance
 
 # Add docker-registry release
 - type: replace
   path: /releases/-
   value:
     name: docker-registry
-    version: latest
+    version: 3.6.0
     url: https://bosh.io/d/github.com/cloudfoundry-community/docker-registry-boshrelease
 
-# Add docker-registry job to the concourse instance
+# Add docker-registry job to Concourse instance
 - type: replace
   path: /instance_groups/name=concourse/jobs/-
   value:
@@ -17,100 +17,23 @@
     release: docker-registry
     properties:
       docker_registry:
-        # Use basic auth
         auth:
-          username: ((docker_registry_username))
+          username: admin
           password: ((docker_registry_password))
-        # HTTP listener (will be behind TLS termination)
-        listen_addr: 127.0.0.1:5000
-        # Storage on persistent disk
+        http:
+          addr: 0.0.0.0:5000
         storage:
           delete:
             enabled: true
-        # Log level
-        log_level: info
 
-# Add docker-registry TLS certificate variable
+# Generate password for docker registry
 - type: replace
   path: /variables/-
-  value:
-    name: docker_registry_certificate
-    type: certificate
-    options:
-      ca: default_ca
-      common_name: ((concourse_static_ip))
-      alternative_names:
-      - ((concourse_static_ip))
-      - docker-registry.bosh
-
-# Add docker-registry username variable (default to "admin")
-- type: replace
-  path: /variables?/-
-  value:
-    name: docker_registry_username
-    type: password
-
-# Add docker-registry password variable
-- type: replace
-  path: /variables?/-
   value:
     name: docker_registry_password
     type: password
 
-# Add nginx job for TLS termination (if not already present)
+# Open port 5000 for docker registry access
 - type: replace
-  path: /releases/-
-  value:
-    name: nginx
-    version: latest
-    url: https://bosh.io/d/github.com/cloudfoundry-community/nginx-release
-
-# Configure nginx to proxy registry with TLS
-- type: replace
-  path: /instance_groups/name=concourse/jobs/-
-  value:
-    name: nginx
-    release: nginx
-    properties:
-      nginx_conf: |
-        worker_processes 1;
-        error_log /var/vcap/sys/log/nginx/error.log;
-        pid /var/vcap/sys/run/nginx/nginx.pid;
-        
-        events {
-          worker_connections 1024;
-        }
-        
-        http {
-          access_log /var/vcap/sys/log/nginx/access.log;
-          
-          upstream docker-registry {
-            server 127.0.0.1:5000;
-          }
-          
-          server {
-            listen 443 ssl;
-            server_name ((concourse_static_ip)) docker-registry.bosh;
-            
-            ssl_certificate /var/vcap/jobs/nginx/config/cert.pem;
-            ssl_certificate_key /var/vcap/jobs/nginx/config/key.pem;
-            
-            client_max_body_size 0;
-            chunked_transfer_encoding on;
-            
-            location / {
-              proxy_pass http://docker-registry;
-              proxy_set_header Host $http_host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-              proxy_read_timeout 900;
-            }
-          }
-        }
-      ssl_key: ((docker_registry_certificate.private_key))
-      ssl_chained_cert: ((docker_registry_certificate.certificate))((docker_registry_certificate.ca))
-      pre_start: |
-        #!/bin/bash
-        CERT_DIR=/var/vcap/jobs/nginx/config
-        mkdir -p $CERT_DIR
+  path: /instance_groups/name=concourse/networks/0/default?/-
+  value: gateway

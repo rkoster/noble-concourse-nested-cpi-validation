@@ -8,17 +8,24 @@ Build a custom warden-cpi image with containerd runtime to avoid the GrootFS XFS
 
 ## Implementation Steps
 
-### Step 1: Deploy Docker Registry ⏳ In Progress
-**Status**: Starting
+### Step 1: Deploy Docker Registry ✅ Complete
+**Status**: Complete
 **Task**: Create BOSH ops file to deploy docker-registry-boshrelease on the Concourse instance
 
 **Details**:
-- Need to deploy a private Docker registry to store the custom warden-cpi image
-- Registry will be deployed via BOSH on the same director as Concourse
-- Credentials will be stored in vars.yml for pipeline access
+- Created `ops-files/docker-registry.yml` to colocate docker-registry with Concourse
+- Configured basic auth with generated password
+- Registry listens on port 5000 (HTTP)
+- Updated `deploy-concourse.sh` to include the ops file
+- Registry will be deployed on same instance as Concourse for simplicity
 
-**Files to Create/Modify**:
+**Files Modified**:
 - `ops-files/docker-registry.yml` - BOSH ops file for registry deployment
+- `deploy-concourse.sh` - Added ops file to deployment command
+
+**Commits**:
+- 3a742ec - Add docker-registry ops file and progress tracking
+- (pending) - Simplify docker-registry ops file and update deploy script
 
 ---
 
