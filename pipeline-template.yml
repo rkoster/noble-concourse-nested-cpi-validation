@@ -122,3 +122,112 @@ jobs:
             args:
               - -c
               - #@ "set -euo pipefail\n\necho \"=== Checking Disk Space ===\"\ndf -h /scratch\n\necho \"=== Cleaning up previous builds ===\"\nrm -rf /scratch/docker /tmp/local-bosh /tmp/tmp.* /root/.bosh || true\ndf -h /scratch\n\necho \"=== Creating patched start-bosh script from base64 ===\"\ncp /usr/local/bin/start-bosh /usr/local/bin/start-bosh.original\n\n# Decode base64-encoded patched script\nbase64 -d > /usr/local/bin/start-bosh <<'BASE64SCRIPT'\n" + start_bosh_b64 + "\nBASE64SCRIPT\n\nchmod +x /usr/local/bin/start-bosh\n\necho \"=== Starting BOSH Director with Docker CPI (patched version) ===\"\nstart-bosh\n\n# Source the environment variables\nsource /tmp/local-bosh/director/env\n\necho \"=== BOSH Director Environment ===\"\necho \"BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}\"\necho \"BOSH_CLIENT: ${BOSH_CLIENT}\"\n\necho \"=== Verifying BOSH Director ===\"\nbosh env\n\necho \"=== Cloud Config ===\"\nbosh cloud-config\n\necho \"=== Creating and Uploading Zookeeper Release ===\"\ncd zookeeper-release\nbosh create-release --force --timestamp-version\nbosh upload-release\ncd ..\n\necho \"=== Uploading Stemcell ===\"\nbosh upload-stemcell --sha1 86662513fbbb9200aca8f0c24fa69e822f49e18c \\\n  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.631\n\necho \"=== Creating ops-file for single instance ===\"\ncat > /tmp/single-instance.yml <<'OPSFILE'\n---\n# Ops-file to deploy a single zookeeper instance instead of 5\n- type: replace\n  path: /instance_groups/name=zookeeper/instances\n  value: 1\n\n- type: replace\n  path: /instance_groups/name=zookeeper/azs\n  value: [z1]\n\n# Remove smoke-tests errand for simplicity\n- type: remove\n  path: /instance_groups/name=smoke-tests\n\n# Update stemcell to jammy\n- type: replace\n  path: /stemcells/alias=default/os\n  value: ubuntu-jammy\nOPSFILE\n\necho \"=== Deploying Zookeeper (Single Instance) ===\"\nbosh -n deploy \\\n  -d zookeeper \\\n  zookeeper-release/manifests/zookeeper.yml \\\n  -o /tmp/single-instance.yml\n\necho \"=== Deployment Status ===\"\nbosh -d zookeeper instances\n\necho \"=== Zookeeper VMs ===\"\nbosh -d zookeeper vms\n\necho \"=== Testing Zookeeper ===\"\n# SSH into the instance and check zookeeper status\nbosh -d zookeeper ssh zookeeper/0 -c \"\n  set -e\n  echo '=== Zookeeper Process Status ==='\n  sudo /var/vcap/bosh/bin/monit summary\n  \n  echo '=== Zookeeper Server Status ==='\n  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'\n\"\n\necho \"=== Cleaning Up ===\"\nbosh -d zookeeper -n delete-deployment\n\necho \"=== Pipeline Complete ===\"\n"
+
+  - name: deploy-zookeeper-on-warden-containerd
+    plan:
+      - in_parallel:
+          - get: warden-cpi-containerd-image
+            trigger: false
+            passed: [build-warden-cpi-containerd-image]
+          - get: zookeeper-release
+            trigger: false
+
+      - task: start-bosh-and-deploy-zookeeper
+        image: warden-cpi-containerd-image
+        privileged: true
+        config:
+          platform: linux
+          inputs:
+            - name: zookeeper-release
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -euxo pipefail
+                
+                echo "=== Starting containerd daemon ==="
+                mkdir -p /run/containerd
+                containerd &
+                
+                # Wait for containerd to be ready
+                for i in $(seq 1 30); do
+                  if ctr version >/dev/null 2>&1; then
+                    echo "containerd is ready"
+                    break
+                  fi
+                  echo "Waiting for containerd... ($i/30)"
+                  sleep 1
+                done
+                
+                echo "=== Starting BOSH Director with Warden CPI (containerd backend) ==="
+                start-bosh
+                
+                # Source the environment variables
+                source /tmp/local-bosh/director/env
+                
+                echo "=== BOSH Director Environment ==="
+                echo "BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}"
+                echo "BOSH_CLIENT: ${BOSH_CLIENT}"
+                
+                echo "=== Verifying BOSH Director ==="
+                bosh env
+                
+                echo "=== Cloud Config ==="
+                bosh cloud-config
+                
+                echo "=== Creating and Uploading Zookeeper Release ==="
+                cd zookeeper-release
+                bosh create-release --force --timestamp-version
+                bosh upload-release
+                cd ..
+                
+                echo "=== Uploading Stemcell ==="
+                bosh upload-stemcell --sha1 8fbcaa623769ec29c39f4c8679337a8c95e8e4a8 \
+                  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.632
+                
+                echo "=== Creating ops-file for single instance ==="
+                cat > /tmp/single-instance.yml <<'OPSFILE'
+                ---
+                - type: replace
+                  path: /instance_groups/name=zookeeper/instances
+                  value: 1
+                
+                - type: replace
+                  path: /instance_groups/name=zookeeper/azs
+                  value: [z1]
+                
+                - type: remove
+                  path: /instance_groups/name=smoke-tests
+                
+                - type: replace
+                  path: /stemcells/alias=default/os
+                  value: ubuntu-jammy
+                OPSFILE
+                
+                echo "=== Deploying Zookeeper (Single Instance) ==="
+                bosh -n deploy \
+                  -d zookeeper \
+                  zookeeper-release/manifests/zookeeper.yml \
+                  -o /tmp/single-instance.yml
+                
+                echo "=== Deployment Status ==="
+                bosh -d zookeeper instances
+                
+                echo "=== Zookeeper VMs ==="
+                bosh -d zookeeper vms
+                
+                echo "=== Testing Zookeeper ==="
+                bosh -d zookeeper ssh zookeeper/0 -c "
+                  set -e
+                  echo '=== Zookeeper Process Status ==='
+                  sudo /var/vcap/bosh/bin/monit summary
+                  
+                  echo '=== Zookeeper Server Status ==='
+                  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'
+                "
+                
+                echo "=== Cleaning Up ==="
+                bosh -d zookeeper -n delete-deployment
+                
+                echo "=== Pipeline Complete - Warden CPI with Containerd SUCCESS ==="

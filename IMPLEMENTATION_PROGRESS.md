@@ -88,32 +88,66 @@ Build a custom warden-cpi image with containerd runtime to avoid the GrootFS XFS
 
 ---
 
-### Step 7: Create Build Job ⏸️ Pending
+### Step 7: Create Build Job ✅ Complete
+**Status**: Complete
 **Task**: Add Concourse pipeline job to build custom warden-cpi image
 
-**Requirements**:
-- Job takes forked bosh repo as input
-- Builds the warden-cpi Docker image
-- Pushes to deployed Docker registry
+**Changes**:
+1. Added resources to pipeline-template.yml:
+   - `warden-cpi-repo` - Git resource for this repository
+   - `bosh-deployment-repo` - Git resource for bosh-deployment (needed in build context)
+   - `warden-cpi-containerd-image` - Registry image resource for custom image
+   - `bosh-cli-image` - Base image for build task
+
+2. Added `build-warden-cpi-containerd-image` job:
+   - Fetches warden-cpi-repo and bosh-deployment
+   - Copies bosh-deployment into build context
+   - Builds Docker image with BASE_IMAGE=ubuntu:noble
+   - Pushes to local registry at `((docker_registry_host))/warden-cpi-containerd:latest`
+
+**Commits**:
+- 6afa98a - Add image build job to pipeline
 
 ---
 
-### Step 8: Configure Registry Push ⏸️ Pending
+### Step 8: Configure Registry Push ✅ Complete
+**Status**: Complete  
 **Task**: Extract Docker registry credentials and configure pipeline
 
 **Implementation**:
-- Use `bosh int vars.yml` to extract registry credentials
-- Pass credentials to `fly set-pipeline` using `--var` arguments
-- Update `repipe.sh` script
+- Updated `repipe.sh` to extract credentials using `bosh interpolate`
+- Extracts `docker_registry_password` from `vars.yml`
+- Passes credentials to pipeline via `--var` arguments
+- Registry host: `${CONCOURSE_STATIC_IP}:5000` (default: 10.246.0.21:5000)
+
+**Command Flow**:
+```bash
+DOCKER_REGISTRY_PASSWORD=$(bosh interpolate vars.yml --path=/docker_registry_password)
+fly set-pipeline --var docker_registry_password=... --var docker_registry_host=...
+```
 
 ---
 
-### Step 9: Update Containerd Job ⏸️ Pending
-**Task**: Modify containerd job to use custom-built image
+### Step 9: Update Pipeline Jobs ✅ Complete
+**Status**: Complete
+**Task**: Add job to deploy using custom-built warden-cpi image
 
-**Changes**:
-- Replace `bosh/warden-cpi` image reference
-- Point to custom image from local registry
+**New Job**: `deploy-zookeeper-on-warden-containerd`
+- Uses `warden-cpi-containerd-image` (custom built image)
+- Depends on successful image build (`passed: [build-warden-cpi-containerd-image]`)
+- Starts containerd daemon before BOSH director
+- Uses standard warden-cpi start-bosh script
+- Deploys zookeeper to validate functionality
+- Tests deployment and cleans up
+
+**Key Differences from Docker-CPI Job**:
+1. Starts containerd daemon explicitly
+2. Waits for containerd to be ready (30s timeout)
+3. Uses warden-cpi with Garden configured for containerd backend
+4. No script patching needed (containerd handles filesystem properly)
+
+**Commits**:
+- (pending) - Add warden-containerd deployment job to pipeline
 
 ---
 
