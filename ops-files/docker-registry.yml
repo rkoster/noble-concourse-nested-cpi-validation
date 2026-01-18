@@ -16,15 +16,18 @@
     name: registry
     release: docker-registry
     properties:
-      docker_registry:
-        auth:
+      docker:
+        registry:
+          bind: 0.0.0.0
+          port: 5000
+        proxy:
           username: admin
           password: ((docker_registry_password))
-        http:
-          addr: 0.0.0.0:5000
-        storage:
-          delete:
-            enabled: true
+      nfs:
+        server:
+          allow_from_entries:
+            - 127.0.0.1
+        share: ~
 
 # Generate password for docker registry
 - type: replace
