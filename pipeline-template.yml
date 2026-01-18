@@ -32,8 +32,22 @@ resources:
       uri: https://github.com/cppforlife/zookeeper-release
       branch: master
 
-jobs:
+  - name: oci-build-task
+    type: registry-image
+    icon: docker
+    source:
+      repository: concourse/oci-build-task
 
+  - name: warden-cpi-containerd-image
+    type: docker-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/warden-cpi-containerd
+      username: admin
+      password: ((docker_registry_password))
+      insecure_registries: [((docker_registry_host))]
+
+jobs:
 
   - name: deploy-zookeeper-on-docker-bosh
     plan:
@@ -53,30 +67,55 @@ jobs:
             path: bash
             args:
               - -c
-              - #@ "set -euo pipefail\n\necho \"=== Checking Disk Space ===\"\ndf -h /scratch\n\necho \"=== Cleaning up previous builds ===\"\nrm -rf /scratch/docker /tmp/local-bosh /tmp/tmp.* /root/.bosh || true\ndf -h /scratch\n\necho \"=== Creating patched start-bosh script from base64 ===\"\ncp /usr/local/bin/start-bosh /usr/local/bin/start-bosh.original\n\n# Decode base64-encoded patched script\nbase64 -d > /usr/local/bin/start-bosh <<'BASE64SCRIPT'\n" + start_bosh_b64 + "\nBASE64SCRIPT\n\nchmod +x /usr/local/bin/start-bosh\n\necho \"=== Starting BOSH Director with Docker CPI (patched version) ===\"\nstart-bosh\n\n# Source the environment variables\nsource /tmp/local-bosh/director/env\n\necho \"=== BOSH Director Environment ===\"\necho \"BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}\"\necho \"BOSH_CLIENT: ${BOSH_CLIENT}\"\n\necho \"=== Verifying BOSH Director ===\"\nbosh env\n\necho \"=== Cloud Config ===\"\nbosh cloud-config\n\necho \"=== Creating and Uploading Zookeeper Release ===\"\ncd zookeeper-release\nbosh create-release --force --timestamp-version\nbosh upload-release\ncd ..\n\necho \"=== Uploading Stemcell ===\"\nbosh upload-stemcell --sha1 86662513fbbb9200aca8f0c24fa69e822f49e18c \\\n  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.631\n\necho \"=== Creating ops-file for single instance ===\"\ncat > /tmp/single-instance.yml <<'OPSFILE'\n---\n# Ops-file to deploy a single zookeeper instance instead of 5\n- type: replace\n  path: /instance_groups/name=zookeeper/instances\n  value: 1\n\n- type: replace\n  path: /instance_groups/name=zookeeper/azs\n  value: [z1]\n\n# Remove smoke-tests errand for simplicity\n- type: remove\n  path: /instance_groups/name=smoke-tests\n\n# Update stemcell to jammy\n- type: replace\n  path: /stemcells/alias=default/os\n  value: ubuntu-jammy\nOPSFILE\n\necho \"=== Deploying Zookeeper (Single Instance) ===\"\nbosh -n deploy \\\n  -d zookeeper \\\n  zookeeper-release/manifests/zookeeper.yml \\\n  -o /tmp/single-instance.yml\n\necho \"=== Deployment Status ===\"\nbosh -d zookeeper instances\n\necho \"=== Zookeeper VMs ===\"\nbosh -d zookeeper vms\n\necho \"=== Testing Zookeeper ===\"\n# SSH into the instance and check zookeeper status\nbosh -d zookeeper ssh zookeeper/0 -c \"\n  set -e\n  echo '=== Zookeeper Process Status ==='\n  sudo /var/vcap/bosh/bin/monit summary\n  \n  echo '=== Zookeeper Server Status ==='\n  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'\n\"\n\necho \"=== Cleaning Up ===\"\nbosh -d zookeeper -n delete-deployment\n\necho \"=== Pipeline Complete ===\"\n"
+              - #@ "set -euo pipefail\n\necho \"=== Checking Disk Space ===\"\ndf -h /scratch\n\necho \"=== Cleaning up previous builds ===\"\nrm -rf /scratch/docker /tmp/local-bosh /tmp/tmp.* /root/.bosh || true\ndf -h /scratch\n\necho \"=== Creating patched start-bosh script from base64 ===\"\ncp /usr/local/bin/start-bosh /usr/local/bin/start-bosh.original\n\n# Decode base64-encoded patched script\nbase64 -d > /usr/local/bin/start-bosh <<'BASE64SCRIPT'\n" + start_bosh_b64 + "\nBASE64SCRIPT\n\nchmod +x /usr/local/bin/start-bosh\n\necho \"=== Starting BOSH Director with Docker CPI (patched version) ===\"\nstart-bosh\n\n# Source the environment variables\nsource /tmp/local-bosh/director/env\n\necho \"=== BOSH Director Environment ===\"\necho \"BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}\"\necho \"BOSH_CLIENT: ${BOSH_CLIENT}\"\n\necho \"=== Verifying BOSH Director ===\"\nbosh env\n\necho \"=== Cloud Config ===\"\nbosh cloud-config\n\necho \"=== Creating and Uploading Zookeeper Release ===\"\ncd zookeeper-release\nbosh create-release --force --timestamp-version\nbosh upload-release\ncd ..\n\necho \"=== Uploading Stemcell ===\"\nbosh upload-stemcell --sha1 86662513fbbb9200aca8f0c24fa69e822f49e18c \\\n  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.631\n\necho \"=== Creating ops-file for single instance ===\"\ncat > /tmp/single-instance.yml <<'OPSFILE'\n---\n# Ops-file to deploy a single zookeeper instance instead of 5\n- type: replace\n  path: /instance_groups/name=zookeeper/instances\n  value: 1\n\n- type: replace\n  path: /instance_groups/name=zookeeper/azs\n  value: [z1]\n\n# Remove smoke-tests errand for simplicity\n- type: remove\n  path: /instance_groups/name=smoke-tests\n\n# Update stemcell to jammy\n- type: replace\n  path: /stemcells/alias=default/os\n  value: ubuntu-jammy\nOPSFILE\n\necho \"=== Deploying Zookeeper (Single Instance) ===\"\nbosh -n deploy \\\n  -d zookeeper \\\n  zookeeper-release/manifests/zookeeper.yml \\\n  -o /tmp/single-instance.yml\n\necho \"=== Deployment Status ===\"\nbosh -d zookeeper instances\n\necho \"=== Zookeeper VMs ===\"\nbosh -d zookeeper vms\n\necho \"=== Testing Zookeeper ===\"\nbosh -d zookeeper ssh zookeeper/0 -c \"\n  set -e\n  echo '=== Zookeeper Process Status ==='\n  sudo /var/vcap/bosh/bin/monit summary\n  \n  echo '=== Zookeeper Server Status ==='\n  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'\n\"\n\necho \"=== Cleaning Up ===\"\nbosh -d zookeeper -n delete-deployment\n\necho \"=== Pipeline Complete - Docker CPI SUCCESS ===\"\n"
 
-  - name: deploy-zookeeper-on-warden-containerd
+  - name: build-warden-cpi-containerd-image
     plan:
       - in_parallel:
           - get: warden-cpi-repo
             trigger: false
           - get: bosh-deployment-repo
             trigger: false
-          - get: zookeeper-release
-            trigger: false
+          - get: oci-build-task
 
-      - task: build-and-run-warden-cpi
+      - task: build-image
         privileged: true
+        image: oci-build-task
         config:
           platform: linux
-          image_resource:
-            type: registry-image
-            source:
-              repository: ubuntu
-              tag: noble
           inputs:
             - name: warden-cpi-repo
             - name: bosh-deployment-repo
+          outputs:
+            - name: image
+          params:
+            CONTEXT: warden-cpi-repo/warden-cpi-containerd
+            DOCKERFILE: warden-cpi-repo/warden-cpi-containerd/Dockerfile
+            BUILD_ARG_BASE_IMAGE: ubuntu:noble
+          run:
+            path: build
+
+      - put: warden-cpi-containerd-image
+        params:
+          image: image/image.tar
+        get_params:
+          skip_download: true
+
+  - name: deploy-zookeeper-on-warden-containerd
+    plan:
+      - in_parallel:
+          - get: warden-cpi-containerd-image
+            trigger: true
+            passed: [build-warden-cpi-containerd-image]
+          - get: zookeeper-release
+            trigger: false
+
+      - task: deploy-with-warden-cpi
+        image: warden-cpi-containerd-image
+        privileged: true
+        config:
+          platform: linux
+          inputs:
             - name: zookeeper-release
           run:
             path: bash
@@ -85,246 +124,195 @@ jobs:
               - |
                 set -euxo pipefail
                 
-                echo "=== Installing Docker ==="
-                apt-get update && apt-get install -y docker.io
+                echo "=== Starting containerd daemon ==="
+                mkdir -p /run/containerd
+                mkdir -p /var/vcap/sys/run/containerd
+                containerd &
                 
-                echo "=== Starting Docker daemon ==="
-                mkdir -p /var/lib/docker
-                dockerd --data-root /scratch/docker &
-                DOCKERD_PID=$!
-                
-                # Wait for Docker to be ready
-                for i in {1..30}; do
-                  if docker info >/dev/null 2>&1; then
-                    echo "Docker daemon is ready"
+                # Wait for containerd to be ready
+                for i in $(seq 1 30); do
+                  if ctr version >/dev/null 2>&1; then
+                    echo "containerd is ready"
+                    # Create symlink so Garden can find containerd socket
+                    ln -sf /run/containerd/containerd.sock /var/vcap/sys/run/containerd/containerd.sock
+                    echo "Created symlink for containerd socket"
                     break
                   fi
+                  echo "Waiting for containerd... ($i/30)"
+                  sleep 1
+                done
+                
+                echo "=== Starting Garden and BOSH Director with Warden CPI (containerd backend) ==="
+                
+                # Start Garden manually with better error handling
+                /var/vcap/jobs/garden/bin/pre-start
+                /var/vcap/jobs/garden/bin/garden_ctl start &
+                
+                # Give Garden time to start
+                sleep 5
+                
+                # Manually check if Garden API is responding
+                echo "=== Checking if Garden API is responding ===" 
+                for i in $(seq 1 30); do
+                  if curl -f http://127.0.0.1:7777/ping 2>/dev/null; then
+                    echo "Garden is responding!"
+                    break
+                  fi
+                  echo "Attempt $i: Garden not ready yet..."
                   sleep 2
                 done
                 
-                echo "=== Building warden-cpi image with containerd support ==="
-                cd warden-cpi-repo/warden-cpi-containerd
-                cp -r ../../bosh-deployment-repo bosh-deployment
+                # Continue with BOSH director deployment
+                echo "=== Deploying BOSH Director ==="
+                cd /usr/local/bosh-deployment
+                export BOSH_DIRECTOR_IP="192.168.56.6"
+                local_bosh_dir="/tmp/local-bosh/director"
+                mkdir -p ${local_bosh_dir}
                 
-                docker build --no-cache --build-arg BASE_IMAGE=ubuntu:noble -t warden-cpi-containerd:latest .
+                bosh int bosh.yml \
+                  -o bosh-lite.yml \
+                  -o warden/cpi.yml \
+                  -o uaa.yml \
+                  -o credhub.yml \
+                  -o jumpbox-user.yml \
+                  -o /usr/local/releases/local-releases.yml \
+                  -v director_name=bosh-lite \
+                  -v internal_ip=${BOSH_DIRECTOR_IP} \
+                  -v internal_gw=192.168.56.1 \
+                  -v internal_cidr=192.168.56.0/24 \
+                  -v outbound_network_name=NatNetwork \
+                  -v garden_host=127.0.0.1 > "${local_bosh_dir}/bosh-director.yml"
                 
-                echo "=== Running BOSH deployment in warden-cpi container ==="
-                docker run --privileged \
-                  -v $(pwd)/../../zookeeper-release:/workspace/zookeeper-release:ro \
-                  warden-cpi-containerd:latest \
-                  bash -c '
-                    set -euxo pipefail
-                    
-                    echo "=== Starting containerd daemon ==="
-                    mkdir -p /run/containerd
-                    mkdir -p /var/vcap/sys/run/containerd
-                    containerd &
-                    
-                    # Wait for containerd to be ready
-                    for i in $(seq 1 30); do
-                      if ctr version >/dev/null 2>&1; then
-                        echo "containerd is ready"
-                        # Create symlink so Garden can find containerd socket
-                        ln -sf /run/containerd/containerd.sock /var/vcap/sys/run/containerd/containerd.sock
-                        echo "Created symlink for containerd socket"
-                        break
-                      fi
-                      echo "Waiting for containerd... ($i/30)"
-                      sleep 1
-                    done
-                    
-                    echo "=== Starting Garden and BOSH Director with Warden CPI (containerd backend) ==="
-                    
-                    # Start Garden manually with better error handling
-                    /var/vcap/jobs/garden/bin/pre-start
-                    /var/vcap/jobs/garden/bin/garden_ctl start &
-                    
-                    # Give Garden time to start
-                    sleep 5
-                    
-                    # Manually check if Garden is responding
-                    echo "=== Checking if Garden API is responding ===" 
-                    for i in $(seq 1 30); do
-                      if curl -f http://127.0.0.1:7777/ping 2>/dev/null; then
-                        echo "Garden is responding!"
-                        break
-                      fi
-                      echo "Attempt $i: Garden not ready yet..."
-                      sleep 2
-                    done
-                    
-                    # Continue with BOSH director deployment
-                    echo "=== Deploying BOSH Director ==="
-                    cd /usr/local/bosh-deployment
-                    export BOSH_DIRECTOR_IP="192.168.56.6"
-                    local_bosh_dir="/tmp/local-bosh/director"
-                    mkdir -p ${local_bosh_dir}
-                    
-                    bosh int bosh.yml \
-                      -o bosh-lite.yml \
-                      -o warden/cpi.yml \
-                      -o uaa.yml \
-                      -o credhub.yml \
-                      -o jumpbox-user.yml \
-                      -o /usr/local/releases/local-releases.yml \
-                      -v director_name=bosh-lite \
-                      -v internal_ip=${BOSH_DIRECTOR_IP} \
-                      -v internal_gw=192.168.56.1 \
-                      -v internal_cidr=192.168.56.0/24 \
-                      -v outbound_network_name=NatNetwork \
-                      -v garden_host=127.0.0.1 > "${local_bosh_dir}/bosh-director.yml"
-                    
-                    echo "=== Debugging: Inspecting warden CPI release structure ==="
-                    echo "--- Warden CPI release tarball location ---"
-                    ls -lh /usr/local/releases/warden-cpi.tgz
-                    
-                    echo "--- Extracting warden CPI release to inspect structure ---"
-                    mkdir -p /tmp/warden-cpi-inspect
-                    tar -xzf /usr/local/releases/warden-cpi.tgz -C /tmp/warden-cpi-inspect
-                    echo "--- Top-level contents of warden CPI release ---"
-                    ls -la /tmp/warden-cpi-inspect/
-                    
-                    echo "--- Warden CPI jobs tarball contents ---"
-                    if [ -f /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz ]; then
-                      tar -tzf /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz | head -30
-                      echo "--- Extracting warden_cpi job ---"
-                      mkdir -p /tmp/warden-cpi-job
-                      tar -xzf /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz -C /tmp/warden-cpi-job
-                      echo "--- Warden CPI job structure ---"
-                      ls -laR /tmp/warden-cpi-job/ | head -50
-                      echo "--- Warden CPI job manifest ---"
-                      cat /tmp/warden-cpi-job/job.MF
-                      echo "--- Warden CPI job templates ---"
-                      ls -la /tmp/warden-cpi-job/templates/ || echo "No templates directory"
-                    else
-                      echo "ERROR: warden_cpi.tgz not found in jobs directory"
-                    fi
-                    
-                    echo "=== Running bosh create-env with DEBUG logging ==="
-                    BOSH_LOG_LEVEL=debug bosh create-env "${local_bosh_dir}/bosh-director.yml" \
-                         --vars-store="${local_bosh_dir}/creds.yml" \
-                         --state="${local_bosh_dir}/state.json" 2>&1 | tee /tmp/bosh-create-env.log || {
-                      echo "=== BOSH create-env failed, analyzing installation ==="
-                      
-                      echo "--- Checking .bosh installations directory structure ---"
-                      find /root/.bosh/installations -type d | head -30 || echo "No installations directory"
-                      
-                      echo "--- Looking for warden CPI installation ---"
-                      find /root/.bosh -name "*warden*" | head -20 || echo "No warden-related files"
-                      
-                      echo "--- All CPI-related files ---"
-                      find /root/.bosh -name "*cpi*" -type f | head -20 || echo "No CPI files found"
-                      
-                      echo "--- Checking if packages were compiled ---"
-                      CPI_PKG_PATH=$(find /root/.bosh -path "*/packages/warden_cpi/bin/cpi" -type f 2>/dev/null | head -1)
-                      if [ -n "$CPI_PKG_PATH" ]; then
-                        echo "Found CPI package binary at: $CPI_PKG_PATH"
-                        ls -lh "$CPI_PKG_PATH"
-                        file "$CPI_PKG_PATH"
-                      else
-                        echo "ERROR: CPI package binary not found"
-                      fi
-                      
-                      echo "--- Checking if job was installed ---"
-                      JOB_DIR=$(find /root/.bosh -path "*/jobs/warden_cpi" -type d 2>/dev/null | head -1)
-                      if [ -n "$JOB_DIR" ]; then
-                        echo "Found warden_cpi job directory at: $JOB_DIR"
-                        ls -laR "$JOB_DIR" | head -50
-                      else
-                        echo "ERROR: warden_cpi job directory not found"
-                      fi
-                      
-                      echo "--- Last 100 lines of bosh create-env debug log ---"
-                      tail -100 /tmp/bosh-create-env.log
-                      
-                      exit 1
-                    }
-                    
-                    bosh int "${local_bosh_dir}/creds.yml" --path /director_ssl/ca > "${local_bosh_dir}/ca.crt"
-                    
-                    cat <<EOF > "${local_bosh_dir}/env"
-                    export BOSH_ENVIRONMENT="${BOSH_DIRECTOR_IP}"
-                    export BOSH_CLIENT=admin
-                    export BOSH_CLIENT_SECRET=`bosh int "${local_bosh_dir}/creds.yml" --path /admin_password`
-                    export BOSH_CA_CERT="${local_bosh_dir}/ca.crt"
-                    EOF
-                    
-                    source "${local_bosh_dir}/env"
-                    bosh -n update-cloud-config warden/cloud-config.yml
-                    ip route add 10.244.0.0/15 via ${BOSH_DIRECTOR_IP}
-                    
-                    # Source the environment variables
-                    source /tmp/local-bosh/director/env
-                    
-                    echo "=== BOSH Director Environment ==="
-                    echo "BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}"
-                    echo "BOSH_CLIENT: ${BOSH_CLIENT}"
-                    
-                    echo "=== Verifying BOSH Director ==="
-                    bosh env
-                    
-                    echo "=== Cloud Config ==="
-                    bosh cloud-config
-                    
-                    echo "=== Creating and Uploading Zookeeper Release ==="
-                    cd /workspace/zookeeper-release
-                    bosh create-release --force --timestamp-version
-                    bosh upload-release
-                    cd /
-                    
-                    echo "=== Uploading Stemcell ==="
-                    bosh upload-stemcell --sha1 8fbcaa623769ec29c39f4c8679337a8c95e8e4a8 \
-                      https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.632
-                    
-                    echo "=== Creating ops-file for single instance ==="
-                    cat > /tmp/single-instance.yml <<'\''OPSFILE'\''
-                    ---
-                    - type: replace
-                      path: /instance_groups/name=zookeeper/instances
-                      value: 1
-                    
-                    - type: replace
-                      path: /instance_groups/name=zookeeper/azs
-                      value: [z1]
-                    
-                    - type: remove
-                      path: /instance_groups/name=smoke-tests
-                    
-                    - type: replace
-                      path: /stemcells/alias=default/os
-                      value: ubuntu-jammy
-                    OPSFILE
-                    
-                    echo "=== Deploying Zookeeper (Single Instance) ==="
-                    bosh -n deploy \
-                      -d zookeeper \
-                      /workspace/zookeeper-release/manifests/zookeeper.yml \
-                      -o /tmp/single-instance.yml
-                    
-                    echo "=== Deployment Status ==="
-                    bosh -d zookeeper instances
-                    
-                    echo "=== Zookeeper VMs ==="
-                    bosh -d zookeeper vms
-                    
-                    echo "=== Testing Zookeeper ==="
-                    bosh -d zookeeper ssh zookeeper/0 -c "
-                      set -e
-                      echo '\''=== Zookeeper Process Status ==='\'
-                      '
-                      sudo /var/vcap/bosh/bin/monit summary
-                      
-                      echo '\''=== Zookeeper Server Status ==='\'
-                      '
-                      echo stat | nc localhost 2181 || echo '\''Could not connect to Zookeeper'\'
-                      '
-                    "
-                    
-                    echo "=== Cleaning Up ==="
-                    bosh -d zookeeper -n delete-deployment
-                    
-                    echo "=== Pipeline Complete - Warden CPI with Containerd SUCCESS ==="
-                  '
+                echo "=== Checking for CPI binary dependencies ==="
+                # Extract and check the CPI binary
+                echo "--- Extracting warden CPI release ---"
+                mkdir -p /tmp/warden-cpi-inspect
+                tar -xzf /usr/local/releases/warden-cpi.tgz -C /tmp/warden-cpi-inspect
                 
-                # Cleanup
-                kill $DOCKERD_PID || true
+                if [ -f /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz ]; then
+                  mkdir -p /tmp/warden-cpi-job
+                  tar -xzf /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz -C /tmp/warden-cpi-job
+                  
+                  echo "--- Checking job bin/cpi template ---"
+                  if [ -f /tmp/warden-cpi-job/templates/cpi.erb ]; then
+                    echo "CPI template exists"
+                    head -20 /tmp/warden-cpi-job/templates/cpi.erb
+                  fi
+                fi
+                
+                echo "=== Running bosh create-env with DEBUG logging ==="
+                BOSH_LOG_LEVEL=debug bosh create-env "${local_bosh_dir}/bosh-director.yml" \
+                     --vars-store="${local_bosh_dir}/creds.yml" \
+                     --state="${local_bosh_dir}/state.json" 2>&1 | tee /tmp/bosh-create-env.log || {
+                  echo "=== BOSH create-env failed, analyzing installation ==="
+                  
+                  echo "--- Checking CPI installation ---"
+                  CPI_PKG_PATH=$(find /root/.bosh -path "*/packages/warden_cpi/bin/cpi" -type f 2>/dev/null | head -1)
+                  if [ -n "$CPI_PKG_PATH" ]; then
+                    echo "Found CPI package binary at: $CPI_PKG_PATH"
+                    ls -lh "$CPI_PKG_PATH"
+                    file "$CPI_PKG_PATH" || echo "file command not available"
+                    
+                    echo "--- Checking CPI binary dependencies (ldd) ---"
+                    ldd "$CPI_PKG_PATH" || echo "ldd check failed - missing dynamic libraries?"
+                    
+                    echo "--- Attempting to run CPI directly ---"
+                    "$CPI_PKG_PATH" || echo "Direct execution failed with exit code: $?"
+                  fi
+                  
+                  echo "--- Checking job wrapper script ---"
+                  JOB_CPI_PATH=$(find /root/.bosh -path "*/jobs/warden_cpi/bin/cpi" -type f 2>/dev/null | head -1)
+                  if [ -n "$JOB_CPI_PATH" ]; then
+                    echo "Found job CPI wrapper at: $JOB_CPI_PATH"
+                    ls -lh "$JOB_CPI_PATH"
+                    echo "--- CPI wrapper script content (first 30 lines) ---"
+                    head -30 "$JOB_CPI_PATH"
+                  fi
+                  
+                  echo "--- Last 100 lines of bosh create-env debug log ---"
+                  tail -100 /tmp/bosh-create-env.log
+                  
+                  exit 1
+                }
+                
+                bosh int "${local_bosh_dir}/creds.yml" --path /director_ssl/ca > "${local_bosh_dir}/ca.crt"
+                
+                cat <<EOF > "${local_bosh_dir}/env"
+                export BOSH_ENVIRONMENT="${BOSH_DIRECTOR_IP}"
+                export BOSH_CLIENT=admin
+                export BOSH_CLIENT_SECRET=`bosh int "${local_bosh_dir}/creds.yml" --path /admin_password`
+                export BOSH_CA_CERT="${local_bosh_dir}/ca.crt"
+                EOF
+                
+                source "${local_bosh_dir}/env"
+                bosh -n update-cloud-config warden/cloud-config.yml
+                ip route add 10.244.0.0/15 via ${BOSH_DIRECTOR_IP}
+                
+                # Source the environment variables
+                source /tmp/local-bosh/director/env
+                
+                echo "=== BOSH Director Environment ==="
+                echo "BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}"
+                echo "BOSH_CLIENT: ${BOSH_CLIENT}"
+                
+                echo "=== Verifying BOSH Director ==="
+                bosh env
+                
+                echo "=== Cloud Config ==="
+                bosh cloud-config
+                
+                echo "=== Creating and Uploading Zookeeper Release ==="
+                cd /workspace/zookeeper-release
+                bosh create-release --force --timestamp-version
+                bosh upload-release
+                cd /
+                
+                echo "=== Uploading Stemcell ==="
+                bosh upload-stemcell --sha1 8fbcaa623769ec29c39f4c8679337a8c95e8e4a8 \
+                  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.632
+                
+                echo "=== Creating ops-file for single instance ==="
+                cat > /tmp/single-instance.yml <<'OPSFILE'
+                ---
+                - type: replace
+                  path: /instance_groups/name=zookeeper/instances
+                  value: 1
+                
+                - type: replace
+                  path: /instance_groups/name=zookeeper/azs
+                  value: [z1]
+                
+                - type: remove
+                  path: /instance_groups/name=smoke-tests
+                
+                - type: replace
+                  path: /stemcells/alias=default/os
+                  value: ubuntu-jammy
+                OPSFILE
+                
+                echo "=== Deploying Zookeeper (Single Instance) ==="
+                bosh -n deploy \
+                  -d zookeeper \
+                  /workspace/zookeeper-release/manifests/zookeeper.yml \
+                  -o /tmp/single-instance.yml
+                
+                echo "=== Deployment Status ==="
+                bosh -d zookeeper instances
+                
+                echo "=== Zookeeper VMs ==="
+                bosh -d zookeeper vms
+                
+                echo "=== Testing Zookeeper ==="
+                bosh -d zookeeper ssh zookeeper/0 -c "
+                  set -e
+                  echo '=== Zookeeper Process Status ==='
+                  sudo /var/vcap/bosh/bin/monit summary
+                  
+                  echo '=== Zookeeper Server Status ==='
+                  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'
+                "
+                
+                echo "=== Cleaning Up ==="
+                bosh -d zookeeper -n delete-deployment
+                
+                echo "=== Pipeline Complete - Warden CPI with Containerd SUCCESS ==="

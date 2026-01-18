@@ -18,7 +18,10 @@ RUN apt-get update -y \
         ruby \
         ruby-dev \
         build-essential \
-        bash
+        bash \
+        file \
+        libgcc-s1 \
+        libc6
 
 RUN gem install bundler --no-document
 
