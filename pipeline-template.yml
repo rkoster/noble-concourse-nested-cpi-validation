@@ -78,19 +78,48 @@ jobs:
             trigger: false
           - get: oci-build-task
 
+      - task: prepare-build-context
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: ubuntu
+              tag: latest
+          inputs:
+            - name: warden-cpi-repo
+            - name: bosh-deployment-repo
+          outputs:
+            - name: build-context
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -eu
+                echo "=== Preparing build context ==="
+                
+                # Copy warden-cpi-containerd directory contents
+                cp -r warden-cpi-repo/warden-cpi-containerd/* build-context/
+                
+                # Copy bosh-deployment into build context
+                cp -r bosh-deployment-repo build-context/bosh-deployment
+                
+                echo "=== Build context prepared ==="
+                ls -la build-context/
+                ls -la build-context/bosh-deployment/ | head -20
+
       - task: build-image
         privileged: true
         image: oci-build-task
         config:
           platform: linux
           inputs:
-            - name: warden-cpi-repo
-            - name: bosh-deployment-repo
+            - name: build-context
           outputs:
             - name: image
           params:
-            CONTEXT: warden-cpi-repo/warden-cpi-containerd
-            DOCKERFILE: warden-cpi-repo/warden-cpi-containerd/Dockerfile
+            CONTEXT: build-context
             BUILD_ARG_BASE_IMAGE: ubuntu:noble
           run:
             path: build
