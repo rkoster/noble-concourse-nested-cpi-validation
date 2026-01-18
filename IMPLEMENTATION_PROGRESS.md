@@ -374,14 +374,102 @@ fi
 
 ---
 
+## Testing Session - 2026-01-18
+
+### Builds #5-13 - Registry Network Binding Issue ❌
+
+**Problem Identified**:
+- Image builds successfully (~2m36s)
+- Push fails with: `dial tcp 10.246.0.21:5000: connect: no route to host`
+- Registry listens on `127.0.0.1:5000` instead of `0.0.0.0:5000`
+- Despite ops file specifying `http.addr: 0.0.0.0:5000`, the docker-registry BOSH release ignores this configuration
+
+**Root Cause**:
+The docker-registry BOSH release has a known issue where it ignores the `http.addr` property and always binds to localhost.
+
+**Evidence**:
+```bash
+$ bosh -d concourse ssh concourse/0 -c "sudo netstat -tlnp | grep 5000"
+tcp        0      0 127.0.0.1:5000          0.0.0.0:*               LISTEN      3884/registry
+```
+
+**Manifest Configuration** (correctly set but ignored):
+```yaml
+properties:
+  docker_registry:
+    http:
+      addr: 0.0.0.0:5000  # Correctly configured but ignored by release
+```
+
+**Impact**:
+- Cannot push images from Concourse worker containers to registry
+- Blocks the image-based testing approach
+- Would require BOSH release modification or network forwarding solution
+
+**Attempted Solutions**:
+1. ✅ Verified BOSH manifest configuration correct
+2. ✅ Confirmed network configuration correct
+3. ❌ Release ignores binding configuration
+4. Considered: iptables forwarding (complex)
+5. Considered: Reverse proxy (additional complexity)
+6. Considered: External registry (requires auth setup)
+
+### Latest Commits:
+- `9e58af3` - fix: add prepare-build-context task to copy bosh-deployment for image build
+- `e6f79ca` - refactor: split build and deploy jobs, add debugging for CPI binary
+- `b69edba` - debug: Add comprehensive BOSH CPI installation debugging
+
+---
+
+## Current Blocker & Recommended Path Forward
+
+### Blocker: Docker Registry Network Binding
+
+The docker-registry BOSH release binds to `127.0.0.1:5000` regardless of configuration, preventing container access. This blocks the registry-based approach entirely.
+
+### Recommended Solution: Simplified Single-Task Approach
+
+Instead of fighting with the registry, create a **single self-contained job** that:
+1. Builds the warden-cpi-containerd image using Docker (not oci-build-task)
+2. Immediately runs the built image to test containerd functionality
+3. Validates BOSH director can start with warden-CPI + containerd
+4. No registry push/pull required
+
+**Benefits**:
+- Eliminates registry dependency
+- Faster iteration cycle (no separate build/deploy jobs)
+- Simpler debugging (everything in one task)
+- Proves containerd solution works without infrastructure changes
+
+**Implementation**:
+- Single privileged task with ubuntu:noble base image
+- Install docker.io, start dockerd
+- Build custom warden-cpi image with containerd
+- Run image in nested privileged container
+- Test BOSH director deployment
+
+**Alternative**: If the goal is just to validate containerd compatibility, we could test containerd directly in the existing warden-cpi upstream image without building a custom one first.
+
+---
+
 ## Next Steps
 
-Once build #2 completes:
-1. Verify image was pushed to `10.246.0.21:5000/warden-cpi-containerd:latest`
-2. Trigger deployment test: `fly -t local trigger-job -j nested-bosh-zookeeper/deploy-zookeeper-on-warden-containerd -w`
-3. Monitor for:
-   - ✅ Containerd daemon starts
-   - ✅ No XFS filesystem errors
-   - ✅ No loop device errors
-   - ✅ BOSH director starts with warden-cpi
-   - ✅ Zookeeper deploys successfully
+**Option 1 (Recommended)**: Implement single-task build-and-test job
+- Create new job: `test-warden-containerd-local`
+- Build image with Docker in privileged task
+- Run built image immediately to test functionality
+- No registry required
+
+**Option 2**: Fix registry binding issue
+- Modify docker-registry BOSH release
+- Add iptables forwarding rules
+- Deploy modified release
+- Requires significant additional work
+
+**Option 3**: Use external registry
+- Configure Docker Hub or GHCR credentials
+- Push to external registry
+- Pull in deployment job
+- Requires credential management
+
+**Recommendation**: Proceed with Option 1 for fastest validation
