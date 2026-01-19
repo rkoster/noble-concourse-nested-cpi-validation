@@ -6,5 +6,11 @@
   path: /instance_groups/name=concourse/jobs/name=worker/properties/runtime?
   value: guardian
 
-- type: remove
-  path: /instance_groups/name=concourse/jobs/name=worker/properties/containerd?
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/garden?
+  value:
+    dns_servers:
+      - 8.8.8.8
+      - 1.1.1.1
+    network:
+      allow_host_access: true

@@ -1,7 +1,7 @@
-# Configure Garden to allow container access to host network
-# This enables task containers to reach services on the Concourse host (like the Docker registry)
-# Without this, containers are network-isolated and cannot reach 10.246.0.21:5000
-
 - type: replace
   path: /instance_groups/name=concourse/jobs/name=worker/properties/containerd?/allow_host_access?
+  value: true
+
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/garden?/network?/allow_host_access?
   value: true
