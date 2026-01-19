@@ -21,7 +21,7 @@
 
 - type: replace
   path: /instance_groups/name=concourse/persistent_disk_type?
-  value: default
+  value: concourse
 
 # Use VM type / stemcell instead of resource_pools
 - type: remove

@@ -3,3 +3,7 @@ vm_types:
   cloud_properties:
     instance_type: c8-m32
     ephemeral_disk: 102400
+
+disk_types:
+- name: concourse
+  disk_size: 20480
