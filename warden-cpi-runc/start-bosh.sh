@@ -4,9 +4,33 @@ set -e
 
 local_bosh_dir="/tmp/local-bosh/director"
 
-/var/vcap/jobs/garden/bin/pre-start
-/var/vcap/jobs/garden/bin/garden_ctl start &
-/var/vcap/jobs/garden/bin/post-start
+# Run pre-start if not already done
+if [ ! -f /var/vcap/data/garden/.pre-start-done ]; then
+  /var/vcap/jobs/garden/bin/pre-start
+  touch /var/vcap/data/garden/.pre-start-done
+fi
+
+# Start Garden (gdn) directly if not already running
+# Note: garden_ctl requires systemd which isn't available in container environments
+if ! curl -sf http://127.0.0.1:7777/ping >/dev/null 2>&1; then
+  echo "Starting gdn server..."
+  /var/vcap/packages/guardian/bin/gdn server \
+    --config /var/vcap/jobs/garden/config/config.ini \
+    >> /var/vcap/sys/log/garden/garden.stdout.log \
+    2>> /var/vcap/sys/log/garden/garden.stderr.log &
+  
+  # Wait for Garden to be ready
+  echo "Waiting for Garden API..."
+  timeout 60 bash -c 'until curl -sf http://127.0.0.1:7777/ping >/dev/null 2>&1; do sleep 1; done' || {
+    echo "Garden failed to start"
+    cat /var/vcap/sys/log/garden/garden.stdout.log || true
+    cat /var/vcap/sys/log/garden/garden.stderr.log || true
+    exit 1
+  }
+  echo "Garden is ready"
+else
+  echo "Garden already running"
+fi
 
 additional_ops_files=""
 if [ "${USE_LOCAL_RELEASES:="true"}" != "false" ]; then

@@ -505,108 +505,18 @@ jobs:
                 echo "Runtime: Garden with runc runtime"
                 echo "Image Plugin: GrootFS (enabled)"
                 echo "Base OS: Ubuntu Noble 24.04"
-                echo "AppArmor: Disabled (via Concourse worker config)"
                 
                 # Mount cgroup filesystem for Garden
                 echo "=== Setting up cgroup v2 ==="
                 mkdir -p /sys/fs/cgroup
                 mount -t cgroup2 none /sys/fs/cgroup || echo "cgroup2 already mounted"
                 
-                # Start Garden with runc runtime (no containerd)
-                echo "=== Starting Garden with runc runtime ==="
-                
-                # Run pre-start first
-                echo "=== Running Garden pre-start ==="
-                /var/vcap/jobs/garden/bin/pre-start || {
-                  echo "=== Garden pre-start failed ==="
-                  echo "=== Checking GrootFS setup ==="
-                  ls -la /var/vcap/data/grootfs/ 2>/dev/null || echo "No grootfs data dir"
-                  ls -la /var/vcap/packages/grootfs/ 2>/dev/null || echo "No grootfs package dir"
-                  cat /var/vcap/sys/log/garden/*.log 2>/dev/null || echo "No garden logs yet"
-                  echo "=== Filesystem type check ==="
-                  df -T /var/vcap/data/ || true
-                  mount | grep -E 'vcap|cgroup' || true
-                  exit 1
-                }
-                
-                # Debug: Check garden_ctl script
-                echo "=== Garden control script ==="
-                cat /var/vcap/jobs/garden/bin/garden_ctl
-                
-                # Debug: Check if AppArmor profile exists
-                echo "=== Checking AppArmor ==="
-                aa-status 2>&1 || echo "AppArmor not available"
-                cat /sys/kernel/security/apparmor/profiles 2>/dev/null | grep garden || echo "No garden AppArmor profile"
-                
-                # Debug: Check if gdn binary works
-                echo "=== Testing gdn binary ==="
-                /var/vcap/packages/guardian/bin/gdn --help 2>&1 | head -20 || echo "gdn help failed"
-                
-                # Debug: Check loopback devices
-                echo "=== Checking loopback device support ==="
-                ls -la /dev/loop* 2>/dev/null | head -5 || echo "No loop devices"
-                losetup -a 2>&1 || echo "losetup not available"
-                
-                # Try to run gdn directly with debug output
-                echo "=== Attempting to start gdn directly ==="
-                cd /var/vcap/packages/guardian
-                
-                # Run gdn server directly capturing all output
-                timeout 10 /var/vcap/packages/guardian/bin/gdn server \
-                  --config /var/vcap/jobs/garden/config/config.ini 2>&1 || {
-                  echo "=== gdn server exited with code $? ==="
-                }
-                
-                # Check if it created any logs
-                echo "=== Garden logs after direct run ==="
-                cat /var/vcap/sys/log/garden/garden.stdout.log 2>/dev/null || echo "No stdout log"
-                cat /var/vcap/sys/log/garden/garden.stderr.log 2>/dev/null || echo "No stderr log"
-                
-                # Try using garden_ctl but capture stderr
-                echo "=== Trying garden_ctl with stderr capture ==="
-                /var/vcap/jobs/garden/bin/garden_ctl start 2>&1 || {
-                  echo "=== Garden startup failed ==="
-                  echo "=== Garden stdout log ==="
-                  cat /var/vcap/sys/log/garden/garden.stdout.log 2>/dev/null || echo "No stdout log"
-                  echo "=== Garden stderr log ==="
-                  cat /var/vcap/sys/log/garden/garden.stderr.log 2>/dev/null || echo "No stderr log"
-                  echo "=== GrootFS stdout log ==="
-                  cat /var/vcap/sys/log/garden/grootfs.stdout.log 2>/dev/null || echo "No grootfs stdout log"
-                  echo "=== GrootFS stderr log ==="
-                  cat /var/vcap/sys/log/garden/grootfs.stderr.log 2>/dev/null || echo "No grootfs stderr log"
-                  echo "=== Garden data directory ==="
-                  ls -la /var/vcap/data/garden/ 2>/dev/null || echo "No garden data dir"
-                  echo "=== GrootFS data directory ==="
-                  ls -la /var/vcap/data/grootfs/ 2>/dev/null || echo "No grootfs data dir"
-                  echo "=== Filesystem info ==="
-                  df -T /var/vcap/data/ || true
-                  mount | grep -E 'vcap|cgroup|overlay' || true
-                  echo "=== Garden job config ==="
-                  cat /var/vcap/jobs/garden/config/config.ini 2>/dev/null || echo "No config.ini"
-                  exit 1
-                }
-                
-                # Wait for Garden to be ready
-                echo "=== Waiting for Garden API ==="
-                timeout 60 bash -c 'until curl -sf http://localhost:7777/ping; do sleep 1; done' || {
-                  echo "Garden failed to respond to ping"
-                  cat /var/vcap/sys/log/garden/garden.stdout.log || true
-                  cat /var/vcap/sys/log/garden/garden.stderr.log || true
-                  exit 1
-                }
-                
-                echo "=== Garden is ready with runc runtime ==="
-                
-                # Start BOSH director with warden-cpi
+                # Start BOSH director with warden-cpi (this also starts Garden)
                 echo "=== Starting BOSH Director ==="
                 /tmp/start-bosh.sh
                 
-                # Source BOSH environment
-                source /root/.bashrc
-                bosh alias-env vbox -e 127.0.0.1 --ca-cert <(bosh int /root/creds.yml --path /director_ssl/ca)
-                export BOSH_CLIENT=admin
-                export BOSH_CLIENT_SECRET=$(bosh int /root/creds.yml --path /admin_password)
-                export BOSH_ENVIRONMENT=vbox
+                # Source BOSH environment created by start-bosh.sh
+                source /tmp/local-bosh/director/env
                 
                 echo "=== BOSH Environment ==="
                 bosh env
