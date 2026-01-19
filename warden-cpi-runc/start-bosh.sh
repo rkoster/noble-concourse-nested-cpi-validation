@@ -4,6 +4,27 @@ set -e
 
 local_bosh_dir="/tmp/local-bosh/director"
 
+# Ensure loop devices exist - required for GrootFS XFS backing store mount
+# In nested containers, /dev/loop* devices may not be pre-created
+echo "=== Setting up loop devices ==="
+if [ ! -e /dev/loop0 ]; then
+  echo "Creating loop device nodes..."
+  for i in $(seq 0 7); do
+    mknod -m 0660 /dev/loop$i b 7 $i 2>/dev/null || true
+  done
+fi
+
+# Load loop module if available (may already be loaded by host)
+modprobe loop 2>/dev/null || true
+
+# Show loop device status for debugging
+echo "Loop devices available:"
+ls -la /dev/loop* 2>/dev/null || echo "No loop devices found"
+
+# Check if losetup works
+echo "Testing losetup:"
+losetup -a 2>/dev/null || echo "losetup command available but no active loops"
+
 # Run pre-start if not already done
 if [ ! -f /var/vcap/data/garden/.pre-start-done ]; then
   /var/vcap/jobs/garden/bin/pre-start
@@ -18,8 +39,14 @@ if [ ! -f /var/vcap/data/garden/.grootfs-init-done ]; then
   mkdir -p /var/vcap/data/grootfs/store/unprivileged
   mkdir -p /var/vcap/data/grootfs/store/privileged
   
-  # Add xfs-progs from garden-runc release to PATH and run overlay-xfs-setup
+  # Add xfs-progs from garden-runc release to PATH
   export PATH=/var/vcap/packages/grootfs/bin:/var/vcap/packages/xfs-progs/sbin:$PATH
+  
+  # Show GrootFS config for debugging
+  echo "=== GrootFS unprivileged config ==="
+  cat /var/vcap/jobs/garden/config/grootfs_config.yml || true
+  echo "=== GrootFS privileged config ==="
+  cat /var/vcap/jobs/garden/config/privileged_grootfs_config.yml || true
   
   # Run the overlay-xfs-setup script if it exists, otherwise init stores directly
   if [ -f /var/vcap/jobs/garden/bin/overlay-xfs-setup ]; then
