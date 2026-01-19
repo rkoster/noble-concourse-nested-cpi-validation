@@ -39,9 +39,9 @@ Dir.mktmpdir do |workspace|
         'graph_cleanup_threshold_in_mb': '0',
         'listen_address': '127.0.0.1:7777',
         'listen_network': 'tcp',
-        # BASELINE TEST: Use default runc runtime, default GrootFS image plugin
-        # NO containerd_mode, NO no_image_plugin, NO runtime_plugin
-        # This is the stock configuration to establish baseline behavior
+        # Disable GrootFS image plugin - it requires XFS filesystem for disk quotas
+        # but we're running inside a Concourse container with overlay filesystem
+        'no_image_plugin': true,
       }
     }
   }
@@ -57,4 +57,4 @@ end
 
 `chmod +x #{File.join(installed_garden_job_path, 'bin', '*')}`
 
-puts "Garden installation complete (runc backend with default GrootFS)"
+puts "Garden installation complete (runc backend, GrootFS disabled)"

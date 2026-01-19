@@ -37,6 +37,7 @@ resources:
     icon: docker
     source:
       repository: concourse/oci-build-task
+      tag: "0.14.8"
 
   - name: warden-cpi-containerd-image
     type: registry-image
@@ -133,7 +134,15 @@ jobs:
             CONTEXT: build-context
             BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
           run:
-            path: build
+            path: sh
+            args:
+              - -c
+              - |
+                # Mount cgroup2 to enable oci-build-task cgroup v2 detection
+                # Guardian/gdn mounts a tmpfs at /sys/fs/cgroup but doesn't expose cgroup v2
+                # This allows the setup-cgroups script to detect cgroup v2 and skip v1 setup
+                mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
+                exec build
 
       - put: warden-cpi-containerd-image
         params:
@@ -436,18 +445,35 @@ jobs:
                 cp -r bosh-deployment-repo/bosh.yml build-context/bosh-deployment/
                 cp -r bosh-deployment-repo/bosh-lite.yml build-context/bosh-deployment/
                 cp -r bosh-deployment-repo/docker build-context/bosh-deployment/
+                cp -r bosh-deployment-repo/warden build-context/bosh-deployment/
+                cp -r bosh-deployment-repo/uaa.yml build-context/bosh-deployment/
+                cp -r bosh-deployment-repo/credhub.yml build-context/bosh-deployment/
+                cp -r bosh-deployment-repo/jumpbox-user.yml build-context/bosh-deployment/
                 
                 echo "Build context prepared for runc runtime"
                 ls -la build-context/
       - task: build-image
         privileged: true
-        file: oci-build-task/task.yml
-        input_mapping:
-          context: build-context
-        params:
-          BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
-          CONTEXT: context
-          DOCKERFILE: context/Dockerfile
+        image: oci-build-task
+        config:
+          platform: linux
+          inputs:
+            - name: build-context
+          outputs:
+            - name: image
+          params:
+            CONTEXT: build-context
+            BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                # Mount cgroup2 to enable oci-build-task cgroup v2 detection
+                # Guardian/gdn mounts a tmpfs at /sys/fs/cgroup but doesn't expose cgroup v2
+                # This allows the setup-cgroups script to detect cgroup v2 and skip v1 setup
+                mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
+                exec build
       - put: warden-cpi-runc-image
         params:
           image: image/image.tar
@@ -483,12 +509,48 @@ jobs:
                 
                 # Start Garden with runc runtime (no containerd)
                 echo "=== Starting Garden with runc runtime ==="
-                /var/vcap/jobs/garden/bin/garden_ctl start
+                
+                # Run pre-start first
+                echo "=== Running Garden pre-start ==="
+                /var/vcap/jobs/garden/bin/pre-start || {
+                  echo "=== Garden pre-start failed ==="
+                  echo "=== Checking GrootFS setup ==="
+                  ls -la /var/vcap/data/grootfs/ 2>/dev/null || echo "No grootfs data dir"
+                  ls -la /var/vcap/packages/grootfs/ 2>/dev/null || echo "No grootfs package dir"
+                  cat /var/vcap/sys/log/garden/*.log 2>/dev/null || echo "No garden logs yet"
+                  echo "=== Filesystem type check ==="
+                  df -T /var/vcap/data/ || true
+                  mount | grep -E 'vcap|cgroup' || true
+                  exit 1
+                }
+                
+                # Start garden with error capture
+                /var/vcap/jobs/garden/bin/garden_ctl start || {
+                  echo "=== Garden startup failed ==="
+                  echo "=== Garden stdout log ==="
+                  cat /var/vcap/sys/log/garden/garden.stdout.log 2>/dev/null || echo "No stdout log"
+                  echo "=== Garden stderr log ==="
+                  cat /var/vcap/sys/log/garden/garden.stderr.log 2>/dev/null || echo "No stderr log"
+                  echo "=== GrootFS stdout log ==="
+                  cat /var/vcap/sys/log/garden/grootfs.stdout.log 2>/dev/null || echo "No grootfs stdout log"
+                  echo "=== GrootFS stderr log ==="
+                  cat /var/vcap/sys/log/garden/grootfs.stderr.log 2>/dev/null || echo "No grootfs stderr log"
+                  echo "=== Garden data directory ==="
+                  ls -la /var/vcap/data/garden/ 2>/dev/null || echo "No garden data dir"
+                  echo "=== GrootFS data directory ==="
+                  ls -la /var/vcap/data/grootfs/ 2>/dev/null || echo "No grootfs data dir"
+                  echo "=== Filesystem info ==="
+                  df -T /var/vcap/data/ || true
+                  mount | grep -E 'vcap|cgroup|overlay' || true
+                  echo "=== Garden job config ==="
+                  cat /var/vcap/jobs/garden/config/config.ini 2>/dev/null || echo "No config.ini"
+                  exit 1
+                }
                 
                 # Wait for Garden to be ready
                 echo "=== Waiting for Garden API ==="
                 timeout 60 bash -c 'until curl -sf http://localhost:7777/ping; do sleep 1; done' || {
-                  echo "Garden failed to start"
+                  echo "Garden failed to respond to ping"
                   cat /var/vcap/sys/log/garden/garden.stdout.log || true
                   cat /var/vcap/sys/log/garden/garden.stderr.log || true
                   exit 1
