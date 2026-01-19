@@ -13,8 +13,26 @@ fi
 # Initialize GrootFS stores if not already done
 if [ ! -f /var/vcap/data/garden/.grootfs-init-done ]; then
   echo "Initializing GrootFS stores..."
-  /var/vcap/packages/grootfs/bin/grootfs --config /var/vcap/jobs/garden/config/grootfs_config.yml init-store || true
-  /var/vcap/packages/grootfs/bin/grootfs --config /var/vcap/jobs/garden/config/privileged_grootfs_config.yml init-store || true
+  
+  # Create store directories
+  mkdir -p /var/vcap/data/grootfs/store/unprivileged
+  mkdir -p /var/vcap/data/grootfs/store/privileged
+  
+  # Add xfs-progs from garden-runc release to PATH and run overlay-xfs-setup
+  export PATH=/var/vcap/packages/grootfs/bin:/var/vcap/packages/xfs-progs/sbin:$PATH
+  
+  # Run the overlay-xfs-setup script if it exists, otherwise init stores directly
+  if [ -f /var/vcap/jobs/garden/bin/overlay-xfs-setup ]; then
+    /var/vcap/jobs/garden/bin/overlay-xfs-setup || {
+      echo "overlay-xfs-setup failed, trying direct init..."
+      grootfs --config /var/vcap/jobs/garden/config/grootfs_config.yml init-store || true
+      grootfs --config /var/vcap/jobs/garden/config/privileged_grootfs_config.yml init-store || true
+    }
+  else
+    grootfs --config /var/vcap/jobs/garden/config/grootfs_config.yml init-store || true
+    grootfs --config /var/vcap/jobs/garden/config/privileged_grootfs_config.yml init-store || true
+  fi
+  
   touch /var/vcap/data/garden/.grootfs-init-done
 fi
 
