@@ -26,6 +26,12 @@ This document tracks systematic testing of different Garden runtime configuratio
    - This suggests the containerd runtime itself might be causing the GrootFS incompatibility
    - Testing hypothesis: Reverting to stock runc + GrootFS may work on Noble
 
+4. **Concourse Runtime Evolution**
+   - Concourse 8.0+ changed default runtime from guardian (runc) to containerd
+   - Upstream BOSH CI pipelines still use Concourse < 8.0 with guardian runtime
+   - **New hypothesis: Guardian runtime (not containerd) is the key to GrootFS compatibility**
+   - Testing approach: Configure Concourse worker to use `runtime: guardian`
+
 ## Testing Strategy
 
 ### Test Matrix
@@ -97,6 +103,30 @@ If upstream BOSH pipelines work with this configuration, it suggests:
 1. **Concourse Lab**: http://10.246.0.21:8080
 2. **Docker Registry**: `10.246.0.21:5000` (colocated with Concourse)
 3. **Pipeline**: `nested-bosh-zookeeper`
+
+### Concourse Runtime Configuration
+
+**NEW APPROACH: Configure Concourse worker to use guardian runtime**
+
+Based on the insight that upstream BOSH CI uses Concourse < 8.0 with guardian runtime (not containerd), we're now testing with the Concourse worker configured for guardian runtime:
+
+```yaml
+# ops-files/guardian-runtime.yml
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/runtime?
+  value: guardian
+```
+
+**Key Changes**:
+- Concourse worker runtime set to `guardian` (runc backend)
+- Removes containerd-specific configuration
+- Matches the runtime used in upstream BOSH CI pipelines
+- Should provide proper environment for nested warden-cpi with GrootFS
+
+**Expected Impact**:
+- Guardian runtime provides proper Garden API implementation for GrootFS
+- Nested containers created by warden-cpi should work with GrootFS
+- No XFS/loop device errors (if this is the correct configuration)
 
 ### Baseline Test (runc + GrootFS)
 

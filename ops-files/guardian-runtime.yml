@@ -1,0 +1,10 @@
+# Configure Concourse worker to use guardian runtime (runc backend) instead of containerd
+# This matches the runtime used in upstream BOSH CI pipelines which successfully use GrootFS
+# See: https://github.com/concourse/concourse-bosh-release/blob/master/jobs/worker/spec#L195-L200
+
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/runtime?
+  value: guardian
+
+- type: remove
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/containerd?
