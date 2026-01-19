@@ -528,6 +528,8 @@ jobs:
       - in_parallel:
           - get: bosh-repo
             trigger: false
+          - get: warden-cpi-repo
+            trigger: false
           - get: bosh-deployment-repo
             trigger: false
           - get: oci-build-task
@@ -540,6 +542,7 @@ jobs:
               repository: alpine
           inputs:
             - name: bosh-repo
+            - name: warden-cpi-repo
             - name: bosh-deployment-repo
           outputs:
             - name: build-context
@@ -548,18 +551,29 @@ jobs:
             args:
               - -exc
               - |
-                # Copy upstream warden-cpi Dockerfile and scripts
-                cp -r bosh-repo/ci/dockerfiles/warden-cpi/* build-context/
+                #! Use our Noble-based Dockerfile but with upstream's install-garden.rb
+                #! This gives us: glibc 2.38 + upstream Garden config (no explicit GrootFS)
                 
-                # Copy bosh-deployment into build context (required by Dockerfile)
+                # Copy our Dockerfile and supporting files
+                cp warden-cpi-repo/warden-cpi-runc/Dockerfile build-context/
+                cp warden-cpi-repo/warden-cpi-runc/template-renderer.rb build-context/
+                cp warden-cpi-repo/warden-cpi-runc/local-releases.yml build-context/
+                cp warden-cpi-repo/warden-cpi-runc/install-warden-cpi.rb build-context/
+                
+                # Use upstream's install-garden.rb (no GrootFS image plugin config)
+                # Rename to match our Dockerfile expectation
+                cp bosh-repo/ci/dockerfiles/warden-cpi/install-garden.rb build-context/install-garden-runc.rb
+                
+                # Use upstream's start-bosh.sh (uses garden_ctl)
+                cp bosh-repo/ci/dockerfiles/warden-cpi/start-bosh.sh build-context/start-bosh.sh
+                
+                # Copy bosh-deployment
                 cp -r bosh-deployment-repo build-context/bosh-deployment
                 
-                echo "=== Upstream warden-cpi build context ==="
+                echo "=== Build context (Noble + upstream Garden config) ==="
                 ls -la build-context/
-                echo "=== Dockerfile ==="
-                cat build-context/Dockerfile
-                echo "=== install-garden.rb ==="
-                cat build-context/install-garden.rb
+                echo "=== install-garden-runc.rb (upstream) ==="
+                cat build-context/install-garden-runc.rb
       - task: build-image
         privileged: true
         image: oci-build-task
@@ -571,7 +585,7 @@ jobs:
             - name: image
           params:
             CONTEXT: build-context
-            BUILD_ARG_BASE_IMAGE: "bosh/main-bosh-docker"
+            BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
           run:
             path: sh
             args:
