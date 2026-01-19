@@ -11,6 +11,7 @@ garden_archive_path = ARGV[0]
   /var/vcap/data/garden/depot
   /var/vcap/data/garden/bin
   /var/vcap/data/tmp
+  /var/run/gdn/depot
 }.each {|path| FileUtils.mkdir_p path}
 
 installed_garden_job_path = File.join('/', 'var', 'vcap', 'jobs', 'garden')
@@ -33,14 +34,13 @@ Dir.mktmpdir do |workspace|
     'job_properties' => {
       'garden' => {
         'allow_host_access': true,
+        'apparmor_profile': '',
         'debug_listen_address': '127.0.0.1:17013',
         'default_container_grace_time': '0',
         'destroy_containers_on_start': true,
         'graph_cleanup_threshold_in_mb': '0',
         'listen_address': '127.0.0.1:7777',
         'listen_network': 'tcp',
-        # GrootFS enabled (default) - AppArmor must be disabled on the outer container
-        # to allow loopback mounting for the XFS backing store
       }
     }
   }
