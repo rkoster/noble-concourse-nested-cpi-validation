@@ -450,7 +450,11 @@ jobs:
                 cp -r bosh-deployment-repo/credhub.yml build-context/bosh-deployment/
                 cp -r bosh-deployment-repo/jumpbox-user.yml build-context/bosh-deployment/
                 
-                echo "Build context prepared for runc runtime"
+                # Show the install-garden-runc.rb configuration (GrootFS enabled by default)
+                echo "=== Garden configuration ==="
+                cat build-context/install-garden-runc.rb
+                
+                echo "Build context prepared for runc runtime with GrootFS enabled"
                 ls -la build-context/
       - task: build-image
         privileged: true
@@ -497,10 +501,11 @@ jobs:
             args:
               - -exc
               - |
-                echo "=== Starting Warden CPI Runc Baseline Test ==="
-                echo "Runtime: Garden with default runc runtime"
-                echo "Image Plugin: GrootFS (default)"
+                echo "=== Starting Warden CPI Runc Test with GrootFS ==="
+                echo "Runtime: Garden with runc runtime"
+                echo "Image Plugin: GrootFS (enabled)"
                 echo "Base OS: Ubuntu Noble 24.04"
+                echo "AppArmor: Disabled (via Concourse worker config)"
                 
                 # Mount cgroup filesystem for Garden
                 echo "=== Setting up cgroup v2 ==="
@@ -524,8 +529,42 @@ jobs:
                   exit 1
                 }
                 
-                # Start garden with error capture
-                /var/vcap/jobs/garden/bin/garden_ctl start || {
+                # Debug: Check garden_ctl script
+                echo "=== Garden control script ==="
+                cat /var/vcap/jobs/garden/bin/garden_ctl
+                
+                # Debug: Check if AppArmor profile exists
+                echo "=== Checking AppArmor ==="
+                aa-status 2>&1 || echo "AppArmor not available"
+                cat /sys/kernel/security/apparmor/profiles 2>/dev/null | grep garden || echo "No garden AppArmor profile"
+                
+                # Debug: Check if gdn binary works
+                echo "=== Testing gdn binary ==="
+                /var/vcap/packages/guardian/bin/gdn --help 2>&1 | head -20 || echo "gdn help failed"
+                
+                # Debug: Check loopback devices
+                echo "=== Checking loopback device support ==="
+                ls -la /dev/loop* 2>/dev/null | head -5 || echo "No loop devices"
+                losetup -a 2>&1 || echo "losetup not available"
+                
+                # Try to run gdn directly with debug output
+                echo "=== Attempting to start gdn directly ==="
+                cd /var/vcap/packages/guardian
+                
+                # Run gdn server directly capturing all output
+                timeout 10 /var/vcap/packages/guardian/bin/gdn server \
+                  --config /var/vcap/jobs/garden/config/config.ini 2>&1 || {
+                  echo "=== gdn server exited with code $? ==="
+                }
+                
+                # Check if it created any logs
+                echo "=== Garden logs after direct run ==="
+                cat /var/vcap/sys/log/garden/garden.stdout.log 2>/dev/null || echo "No stdout log"
+                cat /var/vcap/sys/log/garden/garden.stderr.log 2>/dev/null || echo "No stderr log"
+                
+                # Try using garden_ctl but capture stderr
+                echo "=== Trying garden_ctl with stderr capture ==="
+                /var/vcap/jobs/garden/bin/garden_ctl start 2>&1 || {
                   echo "=== Garden startup failed ==="
                   echo "=== Garden stdout log ==="
                   cat /var/vcap/sys/log/garden/garden.stdout.log 2>/dev/null || echo "No stdout log"

@@ -15,3 +15,12 @@
 - type: replace
   path: /instance_groups/name=concourse/jobs/name=worker/properties/garden/allow_host_access?
   value: true
+
+# Disable AppArmor for Guardian containers to allow nested GrootFS mount operations
+# See: https://github.com/cloudfoundry/garden-runc-release/blob/develop/jobs/garden/spec#L201-L203
+# The garden-default AppArmor profile contains "deny mount," which blocks loopback mounting
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/garden/config_ini?
+  value: |
+    [server]
+      apparmor =

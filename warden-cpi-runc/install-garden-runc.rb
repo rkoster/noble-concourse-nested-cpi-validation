@@ -39,9 +39,8 @@ Dir.mktmpdir do |workspace|
         'graph_cleanup_threshold_in_mb': '0',
         'listen_address': '127.0.0.1:7777',
         'listen_network': 'tcp',
-        # Disable GrootFS image plugin - it requires XFS filesystem for disk quotas
-        # but we're running inside a Concourse container with overlay filesystem
-        'no_image_plugin': true,
+        # GrootFS enabled (default) - AppArmor must be disabled on the outer container
+        # to allow loopback mounting for the XFS backing store
       }
     }
   }
@@ -57,4 +56,4 @@ end
 
 `chmod +x #{File.join(installed_garden_job_path, 'bin', '*')}`
 
-puts "Garden installation complete (runc backend, GrootFS disabled)"
+puts "Garden installation complete (runc backend with GrootFS enabled)"
