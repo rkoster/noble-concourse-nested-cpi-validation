@@ -21,7 +21,8 @@ RUN apt-get update -y \
         file \
         libgcc-s1 \
         libc6 \
-        sudo
+        sudo \
+        xfsprogs
 
 RUN gem install bundler --no-document
 

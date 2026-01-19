@@ -38,6 +38,12 @@ if [ ! -f "${SCRIPT_DIR}/start-bosh-patched.sh" ]; then
     exit 1
 fi
 
+# Check if warden start-bosh.sh exists
+if [ ! -f "${SCRIPT_DIR}/warden-cpi-runc/start-bosh.sh" ]; then
+    echo "Error: warden-cpi-runc/start-bosh.sh not found."
+    exit 1
+fi
+
 # Process template with ytt and set the pipeline
 echo "=== Setting Concourse Pipeline ==="
 echo "Target: ${TARGET}"
@@ -64,7 +70,8 @@ else
 fi
 
 ytt -f "${SCRIPT_DIR}/${PIPELINE_TEMPLATE}" \
-    --data-value-file start_bosh_script="${SCRIPT_DIR}/start-bosh-patched.sh" | \
+    --data-value-file start_bosh_script="${SCRIPT_DIR}/start-bosh-patched.sh" \
+    --data-value-file warden_start_bosh_script="${SCRIPT_DIR}/warden-cpi-runc/start-bosh.sh" | \
     fly -t "${TARGET}" set-pipeline \
         -p "${PIPELINE_NAME}" \
         -c /dev/stdin \

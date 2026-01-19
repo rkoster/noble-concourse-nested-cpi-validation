@@ -33,14 +33,18 @@ Dir.mktmpdir do |workspace|
     'default_properties' => job_spec['properties'].map { |key, value| [key, value['default']]}.to_h,
     'job_properties' => {
       'garden' => {
-        'allow_host_access': true,
-        'apparmor_profile': '',
-        'debug_listen_address': '127.0.0.1:17013',
-        'default_container_grace_time': '0',
-        'destroy_containers_on_start': true,
-        'graph_cleanup_threshold_in_mb': '0',
-        'listen_address': '127.0.0.1:7777',
-        'listen_network': 'tcp',
+        'allow_host_access' => true,
+        'apparmor_profile' => '',
+        'debug_listen_address' => '127.0.0.1:17013',
+        'default_container_grace_time' => '0',
+        'destroy_containers_on_start' => true,
+        'graph_cleanup_threshold_in_mb' => '0',
+        'listen_address' => '127.0.0.1:7777',
+        'listen_network' => 'tcp',
+        'image_plugin' => '/var/vcap/packages/grootfs/bin/grootfs',
+        'image_plugin_extra_args' => ['--config', '/var/vcap/jobs/garden/config/grootfs_config.yml'],
+        'privileged_image_plugin' => '/var/vcap/packages/grootfs/bin/grootfs',
+        'privileged_image_plugin_extra_args' => ['--config', '/var/vcap/jobs/garden/config/privileged_grootfs_config.yml'],
       }
     }
   }

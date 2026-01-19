@@ -10,29 +10,42 @@ if [ ! -f /var/vcap/data/garden/.pre-start-done ]; then
   touch /var/vcap/data/garden/.pre-start-done
 fi
 
+# Initialize GrootFS stores if not already done
+if [ ! -f /var/vcap/data/garden/.grootfs-init-done ]; then
+  echo "Initializing GrootFS stores..."
+  /var/vcap/packages/grootfs/bin/grootfs --config /var/vcap/jobs/garden/config/grootfs_config.yml init-store || true
+  /var/vcap/packages/grootfs/bin/grootfs --config /var/vcap/jobs/garden/config/privileged_grootfs_config.yml init-store || true
+  touch /var/vcap/data/garden/.grootfs-init-done
+fi
+
 # Start Garden (gdn) directly if not already running
 # Note: garden_ctl requires systemd which isn't available in container environments
-# Garden listens on Unix socket at /tmp/garden.sock (default) or TCP on 127.0.0.1:7777
-GARDEN_SOCK="/tmp/garden.sock"
+# Force Garden to listen on TCP port 7777 for Warden CPI compatibility
+GARDEN_ADDR="127.0.0.1:7777"
 
-# Check if Garden is already running via socket
-if [ -S "${GARDEN_SOCK}" ] && curl -sf --unix-socket "${GARDEN_SOCK}" http://localhost/ping >/dev/null 2>&1; then
-  echo "Garden already running on ${GARDEN_SOCK}"
+# Check if Garden is already running
+if curl -sf "http://${GARDEN_ADDR}/ping" >/dev/null 2>&1; then
+  echo "Garden already running on ${GARDEN_ADDR}"
 else
-  echo "Starting gdn server..."
-  
-  # Remove stale socket if exists
-  rm -f "${GARDEN_SOCK}"
+  echo "Starting gdn server on ${GARDEN_ADDR}..."
   
   /var/vcap/packages/guardian/bin/gdn server \
     --config /var/vcap/jobs/garden/config/config.ini \
+    --bind-ip 127.0.0.1 \
+    --bind-port 7777 \
+    --image-plugin /var/vcap/packages/grootfs/bin/grootfs \
+    --image-plugin-extra-arg="--config" \
+    --image-plugin-extra-arg="/var/vcap/jobs/garden/config/grootfs_config.yml" \
+    --privileged-image-plugin /var/vcap/packages/grootfs/bin/grootfs \
+    --privileged-image-plugin-extra-arg="--config" \
+    --privileged-image-plugin-extra-arg="/var/vcap/jobs/garden/config/privileged_grootfs_config.yml" \
     >> /var/vcap/sys/log/garden/garden.stdout.log \
     2>> /var/vcap/sys/log/garden/garden.stderr.log &
   
-  # Wait for Garden to be ready (check both Unix socket and TCP port)
+  # Wait for Garden to be ready
   echo "Waiting for Garden API..."
   timeout 60 bash -c '
-    until [ -S "'${GARDEN_SOCK}'" ] && curl -sf --unix-socket "'${GARDEN_SOCK}'" http://localhost/ping >/dev/null 2>&1; do
+    until curl -sf "http://'"${GARDEN_ADDR}"'/ping" >/dev/null 2>&1; do
       sleep 1
     done
   ' || {
@@ -41,7 +54,7 @@ else
     cat /var/vcap/sys/log/garden/garden.stderr.log || true
     exit 1
   }
-  echo "Garden is ready on ${GARDEN_SOCK}"
+  echo "Garden is ready on ${GARDEN_ADDR}"
 fi
 
 additional_ops_files=""

@@ -2,6 +2,7 @@
 #@ load("@ytt:base64", "base64")
 
 #@ start_bosh_b64 = base64.encode(data.values.start_bosh_script)
+#@ warden_start_bosh_b64 = base64.encode(data.values.warden_start_bosh_script)
 
 ---
 resources:
@@ -499,61 +500,5 @@ jobs:
           run:
             path: bash
             args:
-              - -exc
-              - |
-                echo "=== Starting Warden CPI Runc Test with GrootFS ==="
-                echo "Runtime: Garden with runc runtime"
-                echo "Image Plugin: GrootFS (enabled)"
-                echo "Base OS: Ubuntu Noble 24.04"
-                
-                # Mount cgroup filesystem for Garden
-                echo "=== Setting up cgroup v2 ==="
-                mkdir -p /sys/fs/cgroup
-                mount -t cgroup2 none /sys/fs/cgroup || echo "cgroup2 already mounted"
-                
-                # Start BOSH director with warden-cpi (this also starts Garden)
-                echo "=== Starting BOSH Director ==="
-                /usr/local/bin/start-bosh
-                
-                # Source BOSH environment created by start-bosh.sh
-                source /tmp/local-bosh/director/env
-                
-                echo "=== BOSH Environment ==="
-                bosh env
-                
-                # Upload stemcell
-                echo "=== Uploading Warden Stemcell ==="
-                bosh upload-stemcell https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.598 --sha1 9c87c4c5e0a8e1b4d0b0dd5f3e4e8e9c8e8e8e8e || \
-                  bosh upload-stemcell https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent --version=1.598 || \
-                  echo "Stemcell upload failed or already exists"
-                
-                # Upload zookeeper release
-                echo "=== Uploading Zookeeper Release ==="
-                cd zookeeper-release
-                bosh upload-release release.tgz
-                cd ..
-                
-                # Deploy zookeeper
-                echo "=== Deploying Zookeeper ==="
-                bosh -n -d zookeeper deploy /bosh-deployment/zookeeper.yml \
-                  -o /ops-files/zookeeper-single-instance.yml \
-                  --vars-store /root/zookeeper-creds.yml
-                
-                echo "=== Zookeeper Deployment Status ==="
-                bosh -d zookeeper instances --details
-                bosh -d zookeeper vms --vitals
-                
-                # Test zookeeper
-                echo "=== Testing Zookeeper ==="
-                bosh -d zookeeper ssh zookeeper/0 -c "
-                  set -e
-                  echo 'Testing Zookeeper connectivity'
-                  
-                  echo '=== Zookeeper Server Status ==='
-                  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'
-                "
-                
-                echo "=== Cleaning Up ==="
-                bosh -d zookeeper -n delete-deployment
-                
-                echo "=== Pipeline Complete - Warden CPI with runc SUCCESS ==="
+              - -c
+              - #@ "set -euo pipefail\n\necho \"=== Starting Warden CPI Runc Test with GrootFS ===\"\necho \"Runtime: Garden with runc runtime\"\necho \"Image Plugin: GrootFS (enabled)\"\necho \"Base OS: Ubuntu Noble 24.04\"\n\n# Mount cgroup filesystem for Garden\necho \"=== Setting up cgroup v2 ===\"\nmkdir -p /sys/fs/cgroup\nmount -t cgroup2 none /sys/fs/cgroup || echo \"cgroup2 already mounted\"\n\n# Patch start-bosh script with latest version\necho \"=== Patching start-bosh script ===\"\nbase64 -d > /usr/local/bin/start-bosh <<'BASE64SCRIPT'\n" + warden_start_bosh_b64 + "\nBASE64SCRIPT\nchmod +x /usr/local/bin/start-bosh\n\n# Start BOSH director with warden-cpi (this also starts Garden)\necho \"=== Starting BOSH Director ===\"\n/usr/local/bin/start-bosh\n\n# Source BOSH environment created by start-bosh\nsource /tmp/local-bosh/director/env\n\necho \"=== BOSH Environment ===\"\nbosh env\n\n# Upload stemcell\necho \"=== Uploading Warden Stemcell ===\"\nbosh upload-stemcell --sha1 86662513fbbb9200aca8f0c24fa69e822f49e18c \\\n  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.631\n\n# Upload zookeeper release\necho \"=== Uploading Zookeeper Release ===\"\ncd zookeeper-release\nbosh create-release --force --timestamp-version\nbosh upload-release\ncd ..\n\n# Deploy zookeeper\necho \"=== Deploying Zookeeper ===\"\ncat > /tmp/single-instance.yml <<'OPSFILE'\n---\n- type: replace\n  path: /instance_groups/name=zookeeper/instances\n  value: 1\n- type: replace\n  path: /instance_groups/name=zookeeper/azs\n  value: [z1]\n- type: remove\n  path: /instance_groups/name=smoke-tests\n- type: replace\n  path: /stemcells/alias=default/os\n  value: ubuntu-jammy\nOPSFILE\n\nbosh -n deploy \\\n  -d zookeeper \\\n  zookeeper-release/manifests/zookeeper.yml \\\n  -o /tmp/single-instance.yml\n\necho \"=== Zookeeper Deployment Status ===\"\nbosh -d zookeeper instances --details\nbosh -d zookeeper vms --vitals\n\n# Test zookeeper\necho \"=== Testing Zookeeper ===\"\nbosh -d zookeeper ssh zookeeper/0 -c \"\n  set -e\n  echo 'Testing Zookeeper connectivity'\n  echo '=== Zookeeper Server Status ==='\n  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'\n\"\n\necho \"=== Cleaning Up ===\"\nbosh -d zookeeper -n delete-deployment\n\necho \"=== Pipeline Complete - Warden CPI with runc SUCCESS ===\"\n"
