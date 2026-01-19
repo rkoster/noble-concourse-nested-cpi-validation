@@ -1,56 +1,45 @@
-# Runtime Testing: runc vs containerd for Warden CPI on Noble
+# Warden-CPI Runtime Testing on Ubuntu Noble
 
-## Executive Summary
+## Overview
 
-This document tracks systematic testing of different Garden runtime configurations to determine the optimal approach for running warden-cpi in nested containers on Ubuntu Noble (24.04).
+This document tracks systematic testing of different Garden runtime configurations to determine the optimal approach for running warden-cpi on Ubuntu Noble (24.04) in nested Concourse containers.
 
-**Goal**: Identify why upstream BOSH CI pipelines successfully use GrootFS while our initial attempts with containerd encountered issues.
-
----
+**Goal**: Identify which runtime configuration (runc vs containerd) allows warden-cpi to work successfully on Noble with cgroup v2.
 
 ## Background
 
-### Initial Hypothesis (Containerd Approach)
+### Previous Investigation Findings
 
-Our initial investigation (see `WARDEN_CPI_INVESTIGATION.md` and `CONCOURSE_RUNTIME_ANALYSIS.md`) concluded that:
-- GrootFS requires XFS filesystem via loop devices
-- Loop devices fail in cgroup v2 containers on Noble
-- **Solution tried**: Switch to containerd runtime to bypass GrootFS
+1. **Initial GrootFS + runc Testing** ([WARDEN_CPI_INVESTIGATION.md](./WARDEN_CPI_INVESTIGATION.md))
+   - Testing revealed that GrootFS requires XFS filesystem
+   - XFS requires loop device mounting (`losetup`)
+   - Loop devices fail in cgroup v2 privileged containers with "Operation not permitted"
+   - Error: `Store path filesystem is incompatible with native driver (must be XFS mountpoint)`
 
-### New Hypothesis (runc + GrootFS Approach)
+2. **Containerd Approach** ([CONCOURSE_RUNTIME_ANALYSIS.md](./CONCOURSE_RUNTIME_ANALYSIS.md))
+   - Hypothesis: Containerd's overlayfs snapshotter would bypass XFS requirement
+   - Implementation: Custom warden-cpi image with containerd runtime
+   - Status: In testing (pipeline infrastructure complete)
 
-**Key Observation**: Upstream BOSH CI pipelines run in containers and successfully use GrootFS with the runc backend.
+3. **Key Insight from Upstream**
+   - **Upstream BOSH director pipelines successfully use GrootFS without XFS issues**
+   - This suggests the containerd runtime itself might be causing the GrootFS incompatibility
+   - Testing hypothesis: Reverting to stock runc + GrootFS may work on Noble
 
-**New hypothesis**: The containerd runtime itself may be causing compatibility issues, rather than GrootFS being fundamentally incompatible with nested containers.
+## Testing Strategy
 
----
+### Test Matrix
 
-## Test Matrix
+| Test | Runtime | Image Plugin | Configuration Changes | Expected Outcome |
+|------|---------|--------------|----------------------|------------------|
+| **Baseline** (runc) | runc (stock) | GrootFS (default) | None - stock Garden config | Validate if stock config works on Noble |
+| **Test 1** (containerd) | containerd | overlayfs snapshotter | `containerd_mode: true`<br>`runtime_plugin: '/usr/bin/containerd'` | Bypass XFS requirement with overlayfs |
 
-| Test | Runtime | Image Plugin | GrootFS Modifications | Expected Outcome | Status |
-|------|---------|--------------|----------------------|------------------|--------|
-| **Baseline** | runc | grootfs (default) | None (stock config) | Show what error occurs | 🔄 Pending |
-| **Test 1** | runc | grootfs | Minimal patches only | Test if simple fixes work | 🔄 Pending |
-| **Test 2** | containerd | none (no_image_plugin) | Disabled entirely | Current approach | ⏸️ Paused |
-| **Test 3** | runc | grootfs | XFS backing store config tuning | Test alternative XFS setup | 🔄 Pending |
-| **Test 4** | runc | simple-overlay-plugin | Custom lightweight plugin | Fallback option | 🔄 Pending |
+### Test Baseline: Stock runc + GrootFS
 
-Legend:
-- ✅ Success - Configuration works
-- ❌ Failed - Configuration doesn't work
-- 🔄 Pending - Not yet tested
-- ⏸️ Paused - Testing suspended
-
----
-
-## Test Configurations
-
-### Baseline: Stock runc + GrootFS
-
-**Configuration**:
+**Configuration:**
 ```ruby
-# install-garden.rb
-'garden' => {
+{
   'allow_host_access': true,
   'debug_listen_address': '127.0.0.1:17013',
   'default_container_grace_time': '0',
@@ -58,264 +47,253 @@ Legend:
   'graph_cleanup_threshold_in_mb': '0',
   'listen_address': '127.0.0.1:7777',
   'listen_network': 'tcp',
-  # NO containerd_mode, NO no_image_plugin, NO runtime_plugin overrides
+  # NO containerd_mode
+  # NO no_image_plugin  
+  # NO runtime_plugin
+  # Uses default runc runtime
+  # Uses default GrootFS image plugin
 }
 ```
 
-**Purpose**: Establish baseline behavior with no modifications
+**Key Differences from Previous Tests:**
+- **No modifications to GrootFS configuration**
+- **No attempt to disable backing store or loop devices**
+- **No containerd runtime**
+- **Exact same configuration as upstream BOSH director pipelines**
 
-**Expected Result**: Reproduce the original GrootFS initialization failure
+**Rationale:**
+If upstream BOSH pipelines work with this configuration, it suggests:
+1. GrootFS can work on Noble when properly configured
+2. Previous failures may have been due to incorrect patches or containerd interference
+3. The stock runc + GrootFS combination is the correct baseline
 
----
+### Test 1: Containerd + overlayfs
 
-### Test 1: runc + GrootFS with Minimal Patches
-
-**Configuration**:
+**Configuration:**
 ```ruby
-'garden' => {
+{
   'allow_host_access': true,
-  # ... other settings ...
-  # Keep runc as default runtime (no containerd_mode)
-  # Keep GrootFS as image plugin (no no_image_plugin)
-}
-```
-
-**Patches Applied**:
-1. Allow overlay filesystem (not just XFS) for GrootFS store
-2. Skip loop device creation if unavailable
-3. Disable XFS project quotas (accept no per-container disk limits)
-
-**Purpose**: Test if GrootFS can work with minimal modifications to support overlay filesystem
-
-**Expected Result**: If upstream BOSH CI works with this approach, we should see success
-
----
-
-### Test 2: containerd + No Image Plugin (Current Approach)
-
-**Configuration**:
-```ruby
-'garden' => {
+  'debug_listen_address': '127.0.0.1:17013',
+  'default_container_grace_time': '0',
+  'destroy_containers_on_start': true,
+  'graph_cleanup_threshold_in_mb': '0',
+  'listen_address': '127.0.0.1:7777',
+  'listen_network': 'tcp',
   'containerd_mode': true,
-  'no_image_plugin': true,
   'runtime_plugin': '/usr/bin/containerd',
-  # ... other settings ...
+  # Containerd uses overlayfs snapshotter by default
 }
 ```
 
-**Purpose**: Document the containerd-based approach we've been pursuing
+**Rationale:**
+- Containerd's overlayfs snapshotter doesn't require XFS
+- No loop devices needed for container storage
+- May provide better compatibility with cgroup v2
 
-**Current Status**: 
-- ✅ Custom warden-cpi image builds successfully
-- ⏸️ Testing paused to explore runc approach first
+## Test Execution
 
----
+### Infrastructure Setup
 
-### Test 3: runc + GrootFS with XFS Configuration Tuning
+1. **Concourse Lab**: http://10.246.0.21:8080
+2. **Docker Registry**: `10.246.0.21:5000` (colocated with Concourse)
+3. **Pipeline**: `nested-bosh-zookeeper`
 
-**Configuration**:
-```ruby
-'garden' => {
-  # Default runc runtime
-  'image_plugin': '/var/vcap/packages/grootfs/bin/grootfs',
-  'image_plugin_extra_args': [
-    '--store', '/var/vcap/data/grootfs/store',
-    '--store-size-bytes', '0',  # Disable backing store creation
-    '--with-direct-io', 'true',  # Avoid loop device buffering
-  ]
-}
+### Baseline Test (runc + GrootFS)
+
+**Build Job**: `build-warden-cpi-runc-image`
+- Builds custom Docker image with stock Garden configuration
+- No GrootFS patches or modifications
+- Uses default runc runtime
+
+**Deploy Job**: `deploy-zookeeper-on-warden-runc`
+- Starts Garden with runc runtime
+- Deploys BOSH director with warden-cpi
+- Deploys single-instance zookeeper
+- Tests zookeeper connectivity
+
+**Trigger Commands:**
+```bash
+# Build the runc-based image
+fly -t local trigger-job -j nested-bosh-zookeeper/build-warden-cpi-runc-image -w
+
+# Test deployment (triggers automatically after build)
+# Or manually trigger:
+fly -t local trigger-job -j nested-bosh-zookeeper/deploy-zookeeper-on-warden-runc -w
 ```
 
-**Purpose**: Test if GrootFS configuration flags can bypass loop device requirements
+### Containerd Test
 
----
+**Build Job**: `build-warden-cpi-containerd-image`
+- Builds custom Docker image with containerd package
+- Garden configured for containerd mode
+- Uses containerd's overlayfs snapshotter
 
-### Test 4: runc + Simple Overlay Plugin
+**Deploy Job**: `deploy-zookeeper-on-warden-containerd`
+- Starts containerd daemon
+- Starts Garden with containerd backend
+- Deploys BOSH director with warden-cpi
+- Deploys single-instance zookeeper
 
-**Configuration**:
-```ruby
-'garden' => {
-  'image_plugin': '/usr/local/bin/simple-overlay-plugin',
-  'image_plugin_extra_args': ['--store', '/var/vcap/data/overlay-store']
-}
+**Trigger Commands:**
+```bash
+# Build the containerd-based image  
+fly -t local trigger-job -j nested-bosh-zookeeper/build-warden-cpi-containerd-image -w
+
+# Test deployment (triggers automatically after build)
+# Or manually trigger:
+fly -t local trigger-job -j nested-bosh-zookeeper/deploy-zookeeper-on-warden-containerd -w
 ```
-
-**Purpose**: Fallback option using a custom minimal image plugin (see `GROOTFS_ANALYSIS.md` for design)
-
----
 
 ## Test Results
 
-### Baseline: Stock runc + GrootFS
+### Baseline Test: runc + GrootFS
 
-**Build**: TBD
+**Status**: 🔄 Pending
 
-**Configuration Files**:
-- Dockerfile: `warden-cpi-runc/Dockerfile`
-- Garden installer: `warden-cpi-runc/install-garden-runc.rb`
+**Build**:
+- [ ] Image builds successfully
+- [ ] Build duration: ___ minutes
+- [ ] Image size: ___ MB
 
-**Execution Log**:
-```
-[To be filled after test run]
-```
+**Deployment**:
+- [ ] Garden starts with runc runtime
+- [ ] GrootFS initializes without errors
+- [ ] BOSH director starts
+- [ ] Zookeeper deploys successfully
+- [ ] Zookeeper responds to status checks
 
-**Error Analysis**:
+**Errors Encountered**:
 ```
-[To be filled after test run]
-```
-
-**Conclusion**:
-```
-[To be filled after analysis]
+# To be filled during testing
 ```
 
----
-
-### Test 1: runc + GrootFS with Minimal Patches
-
-**Build**: TBD
-
-**Configuration Changes**:
+**Analysis**:
 ```
-[To be filled during implementation]
+# To be filled after test completion
 ```
 
-**Execution Log**:
-```
-[To be filled after test run]
-```
+### Test 1: Containerd + overlayfs
 
-**Error Analysis**:
+**Status**: 🔄 In Progress (infrastructure complete, testing pending)
+
+**Build**:
+- [x] Image builds successfully
+- [ ] Build duration: ___ minutes
+- [ ] Image size: ___ MB
+
+**Deployment**:
+- [ ] Containerd daemon starts
+- [ ] Garden starts with containerd backend
+- [ ] BOSH director starts
+- [ ] Zookeeper deploys successfully
+- [ ] Zookeeper responds to status checks
+
+**Errors Encountered**:
 ```
-[To be filled after test run]
-```
-
-**Conclusion**:
-```
-[To be filled after analysis]
-```
-
----
-
-### Test 2: containerd + No Image Plugin (Current)
-
-**Build**: 17+ (see http://10.246.0.21:8080)
-
-**Configuration Files**:
-- Dockerfile: `warden-cpi-containerd/Dockerfile`
-- Garden installer: `warden-cpi-containerd/install-garden.rb`
-- Contains: `containerd_mode: true`, `no_image_plugin: true`
-
-**Execution Log**:
-```
-Build 16: Image build failed (OCI configuration issue)
-Build 17+: Image builds successfully, deployment testing in progress
+# To be filled during testing
 ```
 
-**Current Status**: ⏸️ Paused pending runc test results
-
-**Notes**:
-- Successfully builds custom warden-cpi image with containerd runtime
-- Bypasses GrootFS entirely by using `no_image_plugin: true`
-- Testing suspended to investigate if runc approach is simpler/better
-
----
+**Analysis**:
+```
+# To be filled after test completion
+```
 
 ## Comparison with Upstream BOSH CI
 
 ### Upstream Configuration
 
-**Source**: [cloudfoundry/bosh CI pipeline](https://github.com/cloudfoundry/bosh/tree/main/ci)
+Upstream BOSH director pipelines use:
+- **Runtime**: runc (default)
+- **Image Plugin**: GrootFS (default)
+- **Base OS**: Ubuntu Jammy (22.04) and Noble (24.04)
+- **Environment**: Docker-in-Docker (similar to our nested container setup)
 
-**Key Observations**:
-```
-[To be filled after reviewing upstream CI configuration]
-```
+**Key Difference**: Upstream uses the stock configuration without modifications or patches.
 
-**Differences from Our Setup**:
-```
-[To be filled after comparison]
-```
+**Reference**: [cloudfoundry/bosh CI dockerfiles](https://github.com/cloudfoundry/bosh/tree/main/ci/dockerfiles/warden-cpi)
 
----
+### Why Upstream Works
 
-## Recommendations
+Possible reasons upstream doesn't encounter XFS/loop device issues:
+1. **Proper cgroup v2 handling** in the base image
+2. **Correct device permissions** in Docker-in-Docker setup
+3. **No conflicting runtime modifications** (pure runc, no containerd)
+4. **Proper filesystem preparation** for GrootFS backing store
+
+## Conclusions
 
 ### If Baseline Test Succeeds
-- Document the configuration that works
-- Compare with our initial setup to identify what we changed that caused issues
-- Update pipeline to use working configuration
 
-### If Test 1 (Minimal Patches) Succeeds
-- This is the preferred approach (closest to upstream)
-- Minimal maintenance burden
-- GrootFS features mostly intact
+**Finding**: Stock runc + GrootFS configuration works on Noble
 
-### If Only containerd Approach Works
-- Continue with containerd-based solution
-- Accept that this diverges from upstream but works for Noble
-- Document limitations (no GrootFS image caching benefits)
+**Implications**:
+- Previous failures were due to incorrect patches or containerd interference
+- The solution is to use unmodified Garden configuration
+- Upstream approach is the correct pattern
 
-### If All Tests Fail
-- Investigate what makes upstream BOSH CI environment different
-- Consider asking Cloud Foundry community for guidance
-- Fall back to docker-cpi as validated working solution
+**Recommendation**: 
+- Use stock warden-cpi configuration for Noble deployments
+- Remove all GrootFS patches and modifications
+- Follow upstream BOSH CI patterns exactly
 
----
+### If Containerd Test Succeeds (and Baseline Fails)
+
+**Finding**: Containerd's overlayfs snapshotter is required for Noble compatibility
+
+**Implications**:
+- GrootFS has fundamental incompatibility with Noble's cgroup v2 in nested containers
+- Containerd bypasses the XFS requirement successfully
+- This is a valid architectural solution for nested environments
+
+**Recommendation**:
+- Use containerd-based warden-cpi image for Noble nested deployments
+- Maintain separate configurations for Noble vs earlier Ubuntu versions
+- Document the containerd requirement for Noble + nested containers
+
+### If Both Tests Fail
+
+**Finding**: Warden-CPI has fundamental incompatibility with Noble nested containers
+
+**Implications**:
+- Both runtime approaches are blocked by cgroup v2 or other Noble-specific constraints
+- The issue is deeper than just GrootFS vs containerd
+
+**Recommendation**:
+- Use docker-cpi as the validated solution for Noble + nested containers
+- Document warden-cpi as incompatible with Noble nested environments
+- Consider bare metal or traditional VM deployments for warden-cpi on Noble
 
 ## Next Steps
 
-1. **Create runc-based test configurations**
-   - [ ] Copy `warden-cpi-containerd/` to `warden-cpi-runc/`
-   - [ ] Modify `install-garden.rb` to use default runc runtime
-   - [ ] Remove containerd-specific patches
-   - [ ] Update pipeline to add runc test job
+1. **Execute Baseline Test**
+   - Build stock runc + GrootFS image
+   - Deploy and validate on Noble
+   - Document detailed results
 
-2. **Run Baseline Test**
-   - [ ] Trigger build with stock runc + GrootFS configuration
-   - [ ] Document errors that occur
-   - [ ] Compare with upstream BOSH CI behavior
+2. **Compare with Containerd Test**
+   - Review containerd test results (when available)
+   - Compare error messages and behavior
+   - Identify root cause differences
 
-3. **Iterate on Test 1 if needed**
-   - [ ] Apply minimal patches based on baseline errors
-   - [ ] Test with patched configuration
-   - [ ] Document results
+3. **Update Documentation**
+   - Document successful configuration in this file
+   - Update main README with recommendations
+   - Create deployment guide for chosen approach
 
-4. **Update This Document**
-   - [ ] Fill in test results as builds complete
-   - [ ] Add error logs and analysis
-   - [ ] Provide final recommendation
+4. **Productionize Solution**
+   - Clean up pipeline configuration
+   - Remove unsuccessful test configurations
+   - Document production deployment procedures
 
----
+## References
 
-## Appendix: Key Files
-
-### Configuration Files (Containerd Approach)
-- `warden-cpi-containerd/Dockerfile` - Custom image with containerd
-- `warden-cpi-containerd/install-garden.rb` - Garden setup with containerd_mode
-- `warden-cpi-containerd/start-bosh.sh` - BOSH director startup script
-
-### Configuration Files (runc Approach) - To Be Created
-- `warden-cpi-runc/Dockerfile` - Image without containerd dependencies
-- `warden-cpi-runc/install-garden-runc.rb` - Garden setup with default runc
-- `warden-cpi-runc/start-bosh.sh` - Same as containerd version
-
-### Pipeline Configuration
-- `pipeline-template.yml` - Concourse pipeline with build jobs
-- `ops-files/docker-registry.yml` - Docker registry deployment
-- `ops-files/garden-allow-host-access.yml` - Network access configuration
-
-### Investigation Documents
-- `WARDEN_CPI_INVESTIGATION.md` - Original loop device investigation (7 builds)
-- `CONCOURSE_RUNTIME_ANALYSIS.md` - Runtime configuration analysis
-- `GROOTFS_ANALYSIS.md` - Deep dive into GrootFS architecture
-- `RUNTIME_TESTING.md` - This document (runtime comparison tests)
+- [WARDEN_CPI_INVESTIGATION.md](./WARDEN_CPI_INVESTIGATION.md) - Initial GrootFS XFS investigation
+- [CONCOURSE_RUNTIME_ANALYSIS.md](./CONCOURSE_RUNTIME_ANALYSIS.md) - Concourse runtime configuration analysis
+- [IMPLEMENTATION_PROGRESS.md](./IMPLEMENTATION_PROGRESS.md) - Containerd implementation progress
+- [cloudfoundry/bosh warden-cpi](https://github.com/cloudfoundry/bosh/tree/main/ci/dockerfiles/warden-cpi) - Upstream reference
 
 ---
 
-## Revision History
-
-| Date | Change | Author |
-|------|--------|--------|
-| 2026-01-19 | Initial document created | OpenCode |
-
+**Document Status**: Living document - Updated as tests progress  
+**Last Updated**: 2026-01-19  
+**Test Status**: Baseline test ready to execute

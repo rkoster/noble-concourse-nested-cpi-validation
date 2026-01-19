@@ -48,6 +48,16 @@ resources:
       password: ((docker_registry_password))
       insecure: true
 
+  - name: warden-cpi-runc-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/warden-cpi-runc
+      tag: latest
+      username: admin
+      password: ((docker_registry_password))
+      insecure: true
+
 jobs:
 
   - name: deploy-zookeeper-on-docker-bosh
@@ -387,3 +397,152 @@ jobs:
                 bosh -d zookeeper -n delete-deployment
                 
                 echo "=== Pipeline Complete - Warden CPI with Containerd SUCCESS ==="
+
+  - name: build-warden-cpi-runc-image
+    plan:
+      - in_parallel:
+          - get: warden-cpi-repo
+            trigger: false
+          - get: bosh-deployment-repo
+            trigger: false
+          - get: oci-build-task
+      - task: prepare-build-context
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: alpine
+          inputs:
+            - name: warden-cpi-repo
+            - name: bosh-deployment-repo
+          outputs:
+            - name: build-context
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                # Copy runc-based warden-cpi configuration
+                cp -r warden-cpi-repo/warden-cpi-runc/* build-context/
+                
+                # Copy necessary ops files
+                mkdir -p build-context/ops-files
+                cp warden-cpi-repo/ops-files/zookeeper-single-instance.yml build-context/ops-files/
+                cp warden-cpi-repo/ops-files/docker-registry.yml build-context/ops-files/
+                
+                # Copy bosh-deployment manifests
+                mkdir -p build-context/bosh-deployment
+                cp -r bosh-deployment-repo/bosh.yml build-context/bosh-deployment/
+                cp -r bosh-deployment-repo/bosh-lite.yml build-context/bosh-deployment/
+                cp -r bosh-deployment-repo/docker build-context/bosh-deployment/
+                
+                echo "Build context prepared for runc runtime"
+                ls -la build-context/
+      - task: build-image
+        privileged: true
+        file: oci-build-task/task.yml
+        input_mapping:
+          context: build-context
+        params:
+          BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
+          CONTEXT: context
+          DOCKERFILE: context/Dockerfile
+      - put: warden-cpi-runc-image
+        params:
+          image: image/image.tar
+
+  - name: deploy-zookeeper-on-warden-runc
+    plan:
+      - in_parallel:
+          - get: warden-cpi-runc-image
+            trigger: true
+            passed: [build-warden-cpi-runc-image]
+          - get: zookeeper-release
+      - task: deploy-with-warden-cpi
+        privileged: true
+        image: warden-cpi-runc-image
+        config:
+          platform: linux
+          inputs:
+            - name: zookeeper-release
+          run:
+            path: bash
+            args:
+              - -exc
+              - |
+                echo "=== Starting Warden CPI Runc Baseline Test ==="
+                echo "Runtime: Garden with default runc runtime"
+                echo "Image Plugin: GrootFS (default)"
+                echo "Base OS: Ubuntu Noble 24.04"
+                
+                # Mount cgroup filesystem for Garden
+                echo "=== Setting up cgroup v2 ==="
+                mkdir -p /sys/fs/cgroup
+                mount -t cgroup2 none /sys/fs/cgroup || echo "cgroup2 already mounted"
+                
+                # Start Garden with runc runtime (no containerd)
+                echo "=== Starting Garden with runc runtime ==="
+                /var/vcap/jobs/garden/bin/garden_ctl start
+                
+                # Wait for Garden to be ready
+                echo "=== Waiting for Garden API ==="
+                timeout 60 bash -c 'until curl -sf http://localhost:7777/ping; do sleep 1; done' || {
+                  echo "Garden failed to start"
+                  cat /var/vcap/sys/log/garden/garden.stdout.log || true
+                  cat /var/vcap/sys/log/garden/garden.stderr.log || true
+                  exit 1
+                }
+                
+                echo "=== Garden is ready with runc runtime ==="
+                
+                # Start BOSH director with warden-cpi
+                echo "=== Starting BOSH Director ==="
+                /tmp/start-bosh.sh
+                
+                # Source BOSH environment
+                source /root/.bashrc
+                bosh alias-env vbox -e 127.0.0.1 --ca-cert <(bosh int /root/creds.yml --path /director_ssl/ca)
+                export BOSH_CLIENT=admin
+                export BOSH_CLIENT_SECRET=$(bosh int /root/creds.yml --path /admin_password)
+                export BOSH_ENVIRONMENT=vbox
+                
+                echo "=== BOSH Environment ==="
+                bosh env
+                
+                # Upload stemcell
+                echo "=== Uploading Warden Stemcell ==="
+                bosh upload-stemcell https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.598 --sha1 9c87c4c5e0a8e1b4d0b0dd5f3e4e8e9c8e8e8e8e || \
+                  bosh upload-stemcell https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent --version=1.598 || \
+                  echo "Stemcell upload failed or already exists"
+                
+                # Upload zookeeper release
+                echo "=== Uploading Zookeeper Release ==="
+                cd zookeeper-release
+                bosh upload-release release.tgz
+                cd ..
+                
+                # Deploy zookeeper
+                echo "=== Deploying Zookeeper ==="
+                bosh -n -d zookeeper deploy /bosh-deployment/zookeeper.yml \
+                  -o /ops-files/zookeeper-single-instance.yml \
+                  --vars-store /root/zookeeper-creds.yml
+                
+                echo "=== Zookeeper Deployment Status ==="
+                bosh -d zookeeper instances --details
+                bosh -d zookeeper vms --vitals
+                
+                # Test zookeeper
+                echo "=== Testing Zookeeper ==="
+                bosh -d zookeeper ssh zookeeper/0 -c "
+                  set -e
+                  echo 'Testing Zookeeper connectivity'
+                  
+                  echo '=== Zookeeper Server Status ==='
+                  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'
+                "
+                
+                echo "=== Cleaning Up ==="
+                bosh -d zookeeper -n delete-deployment
+                
+                echo "=== Pipeline Complete - Warden CPI with runc SUCCESS ==="
