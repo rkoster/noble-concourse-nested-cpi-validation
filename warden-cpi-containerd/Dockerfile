@@ -61,7 +61,8 @@ COPY template-renderer.rb /tmp/template-renderer.rb
 COPY install-garden.rb /tmp/install-garden.rb
 RUN ruby /tmp/install-garden.rb /usr/local/releases/garden-runc.tgz
 
-RUN mkdir -p /var/vcap/sys/log/warden_cpi/
+COPY install-warden-cpi.rb /tmp/install-warden-cpi.rb
+RUN ruby /tmp/install-warden-cpi.rb /usr/local/releases/warden-cpi.tgz
 
 RUN useradd -ms /bin/bash vcap
 
