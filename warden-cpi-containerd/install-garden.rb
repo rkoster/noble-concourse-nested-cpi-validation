@@ -34,6 +34,7 @@ Dir.mktmpdir do |workspace|
       'garden' => {
         'allow_host_access': true,
         'containerd_mode': true,
+        'no_image_plugin': true,
         'runtime_plugin': '/usr/bin/containerd',
         'debug_listen_address': '127.0.0.1:17013',
         'default_container_grace_time': '0',
