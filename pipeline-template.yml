@@ -39,13 +39,14 @@ resources:
       repository: concourse/oci-build-task
 
   - name: warden-cpi-containerd-image
-    type: docker-image
+    type: registry-image
     icon: docker
     source:
       repository: ((docker_registry_host))/warden-cpi-containerd
+      tag: latest
       username: admin
       password: ((docker_registry_password))
-      insecure_registries: [((docker_registry_host))]
+      insecure: true
 
 jobs:
 
