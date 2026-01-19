@@ -56,3 +56,20 @@ Dir.mktmpdir do |workspace|
 end
 
 `chmod +x #{File.join(installed_garden_job_path, 'bin', '*')}`
+
+# Patch overlay-xfs-setup to skip GrootFS initialization since we're using containerd
+# with no_image_plugin. The GrootFS init fails in nested containers because it tries
+# to set up loop devices which aren't available.
+overlay_xfs_setup_path = File.join(installed_garden_job_path, 'bin', 'overlay-xfs-setup')
+if File.exist?(overlay_xfs_setup_path)
+  puts "Patching overlay-xfs-setup to skip GrootFS initialization..."
+  File.write(overlay_xfs_setup_path, <<~'SCRIPT')
+    #!/usr/bin/env bash
+    # Patched: Skip GrootFS initialization for containerd mode
+    # GrootFS requires loop devices which are not available in nested containers
+    echo "Skipping overlay-xfs-setup (containerd mode with no_image_plugin)"
+    exit 0
+  SCRIPT
+  `chmod +x #{overlay_xfs_setup_path}`
+  puts "Done patching overlay-xfs-setup"
+end
