@@ -21,7 +21,8 @@ RUN apt-get update -y \
         bash \
         file \
         libgcc-s1 \
-        libc6
+        libc6 \
+        sudo
 
 RUN gem install bundler --no-document
 
@@ -62,7 +63,7 @@ COPY install-garden.rb /tmp/install-garden.rb
 RUN ruby /tmp/install-garden.rb /usr/local/releases/garden-runc.tgz
 
 COPY install-warden-cpi.rb /tmp/install-warden-cpi.rb
-RUN ruby /tmp/install-warden-cpi.rb /usr/local/releases/warden-cpi.tgz
+RUN ruby /tmp/install-warden-cpi.rb
 
 RUN useradd -ms /bin/bash vcap
 
