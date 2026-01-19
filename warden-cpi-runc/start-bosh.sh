@@ -12,24 +12,36 @@ fi
 
 # Start Garden (gdn) directly if not already running
 # Note: garden_ctl requires systemd which isn't available in container environments
-if ! curl -sf http://127.0.0.1:7777/ping >/dev/null 2>&1; then
+# Garden listens on Unix socket at /tmp/garden.sock (default) or TCP on 127.0.0.1:7777
+GARDEN_SOCK="/tmp/garden.sock"
+
+# Check if Garden is already running via socket
+if [ -S "${GARDEN_SOCK}" ] && curl -sf --unix-socket "${GARDEN_SOCK}" http://localhost/ping >/dev/null 2>&1; then
+  echo "Garden already running on ${GARDEN_SOCK}"
+else
   echo "Starting gdn server..."
+  
+  # Remove stale socket if exists
+  rm -f "${GARDEN_SOCK}"
+  
   /var/vcap/packages/guardian/bin/gdn server \
     --config /var/vcap/jobs/garden/config/config.ini \
     >> /var/vcap/sys/log/garden/garden.stdout.log \
     2>> /var/vcap/sys/log/garden/garden.stderr.log &
   
-  # Wait for Garden to be ready
+  # Wait for Garden to be ready (check both Unix socket and TCP port)
   echo "Waiting for Garden API..."
-  timeout 60 bash -c 'until curl -sf http://127.0.0.1:7777/ping >/dev/null 2>&1; do sleep 1; done' || {
+  timeout 60 bash -c '
+    until [ -S "'${GARDEN_SOCK}'" ] && curl -sf --unix-socket "'${GARDEN_SOCK}'" http://localhost/ping >/dev/null 2>&1; do
+      sleep 1
+    done
+  ' || {
     echo "Garden failed to start"
     cat /var/vcap/sys/log/garden/garden.stdout.log || true
     cat /var/vcap/sys/log/garden/garden.stderr.log || true
     exit 1
   }
-  echo "Garden is ready"
-else
-  echo "Garden already running"
+  echo "Garden is ready on ${GARDEN_SOCK}"
 fi
 
 additional_ops_files=""

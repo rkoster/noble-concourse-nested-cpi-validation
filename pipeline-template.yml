@@ -513,7 +513,7 @@ jobs:
                 
                 # Start BOSH director with warden-cpi (this also starts Garden)
                 echo "=== Starting BOSH Director ==="
-                /tmp/start-bosh.sh
+                /usr/local/bin/start-bosh
                 
                 # Source BOSH environment created by start-bosh.sh
                 source /tmp/local-bosh/director/env
