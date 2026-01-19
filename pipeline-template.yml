@@ -211,6 +211,28 @@ jobs:
                   sleep 2
                 done
                 
+                # If we get here and Garden still isn't responding, check logs
+                if ! curl -f http://127.0.0.1:7777/ping 2>/dev/null; then
+                  echo "ERROR: Garden never became ready after 30 attempts!"
+                  echo "=== Garden process status ==="
+                  ps aux | grep -E 'garden|containerd' || true
+                  echo "=== Garden logs ==="
+                  ls -la /var/vcap/sys/log/garden/ || true
+                  echo "=== garden stdout ==="
+                  cat /var/vcap/sys/log/garden/garden.stdout.log 2>/dev/null || echo "No stdout log"
+                  echo "=== garden stderr ==="
+                  cat /var/vcap/sys/log/garden/garden.stderr.log 2>/dev/null || echo "No stderr log"
+                  echo "=== containerd stdout ==="
+                  cat /var/vcap/sys/log/garden/containerd.stdout.log 2>/dev/null || echo "No containerd stdout log"
+                  echo "=== containerd stderr ==="
+                  cat /var/vcap/sys/log/garden/containerd.stderr.log 2>/dev/null || echo "No containerd stderr log"
+                  echo "=== Network status ==="
+                  netstat -tlnp || ss -tlnp || true
+                  echo "=== Sleeping for 10 minutes for debugging ==="
+                  sleep 600
+                  exit 1
+                fi
+                
                 # Continue with BOSH director deployment
                 echo "=== Deploying BOSH Director ==="
                 cd /usr/local/bosh-deployment
