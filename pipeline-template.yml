@@ -737,6 +737,15 @@ jobs:
               - |
                 echo "=== Building upstream warden-cpi image ==="
                 echo "Base image: ((docker_registry_host))/integration:latest"
+                
+                # Configure buildkit to use HTTP for local insecure registry
+                mkdir -p /root/.config/buildkit
+                cat > /root/.config/buildkit/buildkitd.toml <<'EOF'
+                [registry."((docker_registry_host))"]
+                  http = true
+                  insecure = true
+                EOF
+                
                 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
                 exec build
       - put: upstream-warden-cpi-image
