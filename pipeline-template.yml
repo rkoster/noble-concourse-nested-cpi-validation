@@ -724,12 +724,11 @@ jobs:
           platform: linux
           inputs:
             - name: build-context
-            - name: integration-image
           outputs:
             - name: image
           params:
             CONTEXT: build-context
-            IMAGE_ARG_BASE_IMAGE: integration-image/image.tar
+            BUILD_ARG_BASE_IMAGE: "((docker_registry_host))/integration:latest"
             BUILDKIT_PROGRESS: plain
           run:
             path: sh
@@ -737,6 +736,7 @@ jobs:
               - -c
               - |
                 echo "=== Building upstream warden-cpi image ==="
+                echo "Base image: ((docker_registry_host))/integration:latest"
                 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
                 exec build
       - put: upstream-warden-cpi-image
