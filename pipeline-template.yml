@@ -679,6 +679,8 @@ jobs:
           - get: integration-image
             trigger: true
             passed: [build-integration-image]
+            params:
+              format: oci
           - get: oci-build-task
       - task: prepare-build-context
         config:
@@ -724,11 +726,12 @@ jobs:
           platform: linux
           inputs:
             - name: build-context
+            - name: integration-image
           outputs:
             - name: image
           params:
             CONTEXT: build-context
-            BUILD_ARG_BASE_IMAGE: "((docker_registry_host))/integration:latest"
+            IMAGE_ARG_base_image: integration-image
             BUILDKIT_PROGRESS: plain
           run:
             path: sh
@@ -736,15 +739,7 @@ jobs:
               - -c
               - |
                 echo "=== Building upstream warden-cpi image ==="
-                echo "Base image: ((docker_registry_host))/integration:latest"
-                
-                # Configure buildkit to use HTTP for local insecure registry
-                mkdir -p /root/.config/buildkit
-                cat > /root/.config/buildkit/buildkitd.toml <<'EOF'
-                [registry."((docker_registry_host))"]
-                  http = true
-                  insecure = true
-                EOF
+                echo "Base image: preloaded from integration-image (OCI format)"
                 
                 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
                 exec build
