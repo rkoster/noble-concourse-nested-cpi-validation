@@ -190,6 +190,7 @@ jobs:
       - task: build-image
         privileged: true
         image: oci-build-task
+        timeout: 2h
         config:
           platform: linux
           inputs:
@@ -200,11 +201,15 @@ jobs:
             CONTEXT: build-context
             BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
             BUILD_ARGS_FILE: build-context/docker-build-args.json
+            BUILDKIT_PROGRESS: plain
           run:
             path: sh
             args:
               - -c
               - |
+                echo "=== Starting integration image build ==="
+                echo "This may take 20-30 minutes on first build..."
+                echo ""
                 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
                 exec build
       - put: integration-image
@@ -276,6 +281,7 @@ jobs:
       - task: build-image
         privileged: true
         image: oci-build-task
+        timeout: 30m
         config:
           platform: linux
           inputs:
@@ -285,11 +291,13 @@ jobs:
           params:
             CONTEXT: build-context
             BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
+            BUILDKIT_PROGRESS: plain
           run:
             path: sh
             args:
               - -c
               - |
+                echo "=== Building warden-cpi-containerd image ==="
                 # Mount cgroup2 to enable oci-build-task cgroup v2 detection
                 # Guardian/gdn mounts a tmpfs at /sys/fs/cgroup but doesn't expose cgroup v2
                 # This allows the setup-cgroups script to detect cgroup v2 and skip v1 setup
@@ -611,6 +619,7 @@ jobs:
       - task: build-image
         privileged: true
         image: oci-build-task
+        timeout: 30m
         config:
           platform: linux
           inputs:
@@ -620,11 +629,13 @@ jobs:
           params:
             CONTEXT: build-context
             BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
+            BUILDKIT_PROGRESS: plain
           run:
             path: sh
             args:
               - -c
               - |
+                echo "=== Building warden-cpi-runc image ==="
                 # Mount cgroup2 to enable oci-build-task cgroup v2 detection
                 # Guardian/gdn mounts a tmpfs at /sys/fs/cgroup but doesn't expose cgroup v2
                 # This allows the setup-cgroups script to detect cgroup v2 and skip v1 setup
@@ -705,6 +716,7 @@ jobs:
       - task: build-image
         privileged: true
         image: oci-build-task
+        timeout: 30m
         config:
           platform: linux
           inputs:
@@ -715,11 +727,13 @@ jobs:
           params:
             CONTEXT: build-context
             IMAGE_ARG_BASE_IMAGE: integration-image/image.tar
+            BUILDKIT_PROGRESS: plain
           run:
             path: sh
             args:
               - -c
               - |
+                echo "=== Building upstream warden-cpi image ==="
                 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
                 exec build
       - put: upstream-warden-cpi-image
