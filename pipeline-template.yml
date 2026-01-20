@@ -126,6 +126,7 @@ jobs:
                 #! Build docker args for integration image
                 #! Simplified version of upstream build-docker-args.sh
                 
+                export DEBIAN_FRONTEND=noninteractive
                 apt-get update -y
                 apt-get install -y --no-install-recommends ca-certificates curl jq
                 
@@ -200,6 +201,7 @@ jobs:
           params:
             CONTEXT: build-context
             BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
+            BUILD_ARG_DEBIAN_FRONTEND: "noninteractive"
             BUILD_ARGS_FILE: build-context/docker-build-args.json
             BUILDKIT_PROGRESS: plain
           run:
