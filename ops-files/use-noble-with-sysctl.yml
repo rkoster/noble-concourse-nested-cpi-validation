@@ -1,0 +1,27 @@
+# Switch back to Noble stemcell and disable kernel restriction on unprivileged user namespaces
+# This allows loop device operations in Guardian/Garden containers
+
+# Use Noble stemcell
+- type: replace
+  path: /stemcells/alias=default/os
+  value: ubuntu-noble
+
+# Add os-conf-release
+- type: replace
+  path: /releases/-
+  value:
+    name: os-conf
+    version: 23.0.0
+    sha1: sha256:efcf30754ce4c5f308aedab3329d8d679f5967b2a4c3c453204c7cb10c7c5ed9
+    url: https://bosh.io/d/github.com/cloudfoundry/os-conf-release?v=23.0.0
+
+# Add sysctl job to disable kernel.apparmor_restrict_unprivileged_userns
+# This allows nested BOSH directors to use loop devices for grootfs
+- type: replace
+  path: /instance_groups/name=concourse/jobs/-
+  value:
+    name: sysctl
+    release: os-conf
+    properties:
+      sysctl:
+      - kernel.apparmor_restrict_unprivileged_userns=0

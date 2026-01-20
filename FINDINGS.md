@@ -218,6 +218,44 @@ Switched Concourse worker from Noble (24.04, kernel 6.8) to Jammy (22.04, kernel
 - No "Operation not permitted" errors
 - Loop devices work in user namespaces on Jammy kernel 5.15
 
+### Noble with Sysctl Override (Tested - INSUFFICIENT for Nested Containers ❌)
+
+Attempted to use Noble stemcell with the kernel restriction disabled via sysctl.
+
+**Implementation**:
+1. Uploaded `os-conf-release/23.0.0` to add sysctl job
+2. Created `ops-files/use-noble-with-sysctl.yml` that:
+   - Uses Noble stemcell
+   - Adds os-conf-release
+   - Adds sysctl job with `kernel.apparmor_restrict_unprivileged_userns=0`
+3. Deployed Concourse with sysctl override
+4. Verified sysctl setting: `kernel.apparmor_restrict_unprivileged_userns = 0` ✅
+
+**Result**: **Garden inside nested Docker container still fails to start** ❌
+
+**Evidence from pipeline build #7**:
+```
+2026-01-20T15:36:26.138434840Z: Pinging garden server...
+2026-01-20T15:36:26.139990657Z: Attempt 1...
+...
+2026-01-20T15:38:26.237070659Z: Timed out pinging garden server.
+```
+
+**Root Cause**: The sysctl is applied to the **Concourse VM host** and does propagate to containerd containers on that host. However, the nested BOSH director runs a **Docker daemon inside the Concourse container**, which creates **nested containers with their own user namespaces**. 
+
+The Docker container creation process inside the Concourse container may:
+1. Create new user namespaces for the nested BOSH Garden containers
+2. Have different namespace isolation that still triggers the restriction
+3. Be subject to additional Docker security policies that prevent loop device access
+
+**Conclusion**: While the sysctl override works for containers directly on the Concourse VM, it **does not solve the problem for nested containerization** (Docker-in-containerd-container scenario). The nested Docker containers running Garden still cannot access loop devices.
+
+**Why This Doesn't Work for Nested Containers**:
+- Sysctl parameters are kernel-global, but their enforcement may vary based on namespace nesting depth
+- Docker's own security policies and user namespace remapping may add additional restrictions
+- The upstream `bosh/main-bosh-docker` image may not be designed to handle this Noble kernel restriction
+- Multiple layers of containerization (Concourse containerd → Docker → Garden) create complex namespace interactions
+
 ## Recommended Solution
 
 **Use Jammy (22.04) stemcell for Concourse workers** instead of Noble (24.04).
