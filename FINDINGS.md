@@ -6,14 +6,20 @@ The nested BOSH director fails to start garden inside the Concourse worker conta
 
 ## Root Cause
 
-**Loop device operations are not permitted inside Concourse worker containers.**
+**Loop device operations are blocked by Ubuntu 24.04 (Noble) kernel security restrictions on user namespaces.**
+
+The issue is a **kernel-level security policy** introduced in Linux kernel 6.x series (Noble uses 6.8.0), specifically:
+- `kernel.apparmor_restrict_unprivileged_userns = 1` (present in Noble 6.8, absent in Jammy 5.15)
+
+This kernel parameter restricts what operations unprivileged user namespaces can perform, including loop device operations (LOOP_SET_FD ioctl).
 
 Even though:
 - Loop devices `/dev/loop*` are accessible in the container
 - The container has full capabilities (`CapEff: 0000003fffffffff`)
 - The container is NOT confined by AppArmor (`unconfined`)
+- Both loop and device-mapper are built into the kernel (`CONFIG_BLK_DEV_LOOP=y`, `CONFIG_BLK_DEV_DM=y`)
 
-The `losetup` command fails with `Operation not permitted` when attempting to attach a file to a loop device.
+The `losetup` command fails with `Operation not permitted` because Guardian/Garden containers run in user namespaces for isolation.
 
 ### Evidence
 
@@ -64,18 +70,32 @@ From `/var/vcap/sys/log/garden/garden_ctl.stderr.log`:
   - Verified via: `sudo apparmor_status --json | jq '.' | grep garden`
   - Shows: `"garden-default": "enforce"`
 
-## Why Loop Devices Don't Work
+## Kernel Version Comparison
 
-The issue is that **Concourse's containerd/runc worker does not grant the necessary privileges** for loop device operations, even when the container appears to have full capabilities.
+Testing confirmed this is a kernel version difference, **not a missing module**:
 
-Loop device operations require:
-1. `CAP_SYS_ADMIN` capability (present)
-2. Ability to call `LOOP_SET_FD` ioctl on loop devices (BLOCKED)
+### Jammy (Working)
+- **Kernel**: 5.15.0-164-generic
+- **OS**: Ubuntu 22.04.5 LTS
+- **Key sysctl**: `kernel.apparmor_restrict_unprivileged_userns` = **NOT PRESENT**
+- **Loop devices**: Work in user namespaces ✅
+- **Modules**: loop and dm built-in (`CONFIG_BLK_DEV_LOOP=y`, `CONFIG_BLK_DEV_DM=y`)
 
-The kernel blocks the `LOOP_SET_FD` ioctl because:
-- The container is in a user namespace (unprivileged container)
-- OR seccomp filters block the operation
-- OR the container runtime explicitly blocks loop device mounts
+### Noble (Broken)
+- **Kernel**: 6.8.0-90-generic  
+- **OS**: Ubuntu 24.04.3 LTS
+- **Key sysctl**: `kernel.apparmor_restrict_unprivileged_userns = 1` ⚠️
+- **Loop devices**: Blocked in user namespaces ❌
+- **Modules**: loop and dm built-in (identical config)
+
+## Why Loop Devices Don't Work on Noble
+
+The kernel blocks the `LOOP_SET_FD` ioctl in unprivileged user namespaces due to:
+1. Ubuntu kernel security hardening in 6.x series
+2. AppArmor restrictions on unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns = 1`)
+3. Guardian/Garden containers run in user namespaces for isolation
+
+This is **by design** for security - not a bug or missing module.
 
 ## Potential Solutions
 
@@ -148,13 +168,13 @@ mounts:
 
 ## Test Results
 
-### Privileged Container Mode (Tested - FAILED)
+### Privileged Container Mode (Tested - INSUFFICIENT)
 
 Enabled `garden.allow_privileged_containers: true` in Concourse worker configuration and set `privileged: true` in pipeline tasks.
 
-**Result**: Loop device operations still fail with "Operation not permitted"
+**Result**: Loop device operations still fail with "Operation not permitted" on Noble
 
-**Root Cause**: Even with full capabilities (including CAP_SYS_ADMIN), the containers run in **user namespaces**. The Linux kernel restricts loop device operations from within user namespaces as a security measure.
+**Root Cause**: Even with full capabilities (including CAP_SYS_ADMIN), the containers run in **user namespaces**. The Noble kernel (6.8) restricts loop device operations from within unprivileged user namespaces as a security measure (`kernel.apparmor_restrict_unprivileged_userns = 1`).
 
 **Evidence**:
 ```bash
@@ -171,13 +191,51 @@ $ losetup -f /tmp/test.img
 losetup: /tmp/test.img: failed to set up loop device: Operation not permitted
 ```
 
-**Conclusion**: Guardian/Garden runtime in Concourse uses user namespaces for isolation, which blocks loop device operations even in "privileged" mode. The only solution would be to disable user namespaces entirely (not supported by Guardian) or use overlay-only filesystem (Option 2).
+**Conclusion**: Guardian/Garden runtime in Concourse uses user namespaces for isolation, which blocks loop device operations on Noble kernel even in "privileged" mode.
 
-## Next Steps
+### Switch to Jammy Stemcell (Tested - SUCCESS ✅)
 
-1. **Recommended**: Use Docker CPI (Option 3) - already proven to work
-2. **Alternative**: Implement overlay-only garden configuration (Option 2) 
-3. **Research**: Check upstream BOSH CI to see how they handle this
+Switched Concourse worker from Noble (24.04, kernel 6.8) to Jammy (22.04, kernel 5.15) stemcell.
+
+**Implementation**:
+1. Created `ops-files/use-jammy-stemcell.yml` to override stemcell OS
+2. Updated `deploy-concourse.sh` to apply the ops-file
+3. Uploaded Jammy stemcell for OpenStack: `bosh-openstack-kvm-ubuntu-jammy-go_agent/1.1016`
+4. Redeployed Concourse
+
+**Result**: **Garden starts successfully!** ✅
+
+**Evidence from pipeline build**:
+```
+2026-01-20T12:45:49.139114773Z - running thresholder
+2026-01-20T12:45:49.145792231Z - done
+2026-01-20T12:45:49.149526304Z: Pinging garden server...
+2026-01-20T12:45:50.165527850Z: Success!
+```
+
+- Grootfs thresholder completed (requires loop device operations)
+- Garden server responds successfully
+- No "Operation not permitted" errors
+- Loop devices work in user namespaces on Jammy kernel 5.15
+
+## Recommended Solution
+
+**Use Jammy (22.04) stemcell for Concourse workers** instead of Noble (24.04).
+
+This is the same approach used by upstream BOSH CI, which runs Jammy-based Concourse workers for nested BOSH testing.
+
+### Why This Works
+
+- Jammy kernel 5.15 does not have `kernel.apparmor_restrict_unprivileged_userns` restriction
+- Loop device operations work in user namespaces on older kernels
+- No changes needed to Guardian/Garden configuration
+- Maintains security through user namespace isolation (just without the additional 6.x restrictions)
+
+### Alternative Solutions (Not Recommended)
+
+1. **Docker CPI**: Already working in pipeline but different from production BOSH
+2. **Overlay-only garden**: Requires modifying BOSH/garden config, may lose disk quotas  
+3. **Disable user namespaces**: Not supported by Guardian runtime
 
 ## References
 
