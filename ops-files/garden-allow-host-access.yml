@@ -5,3 +5,9 @@
 - type: replace
   path: /instance_groups/name=concourse/jobs/name=worker/properties/garden?/network?/allow_host_access?
   value: true
+
+# Enable privileged containers to allow nested BOSH directors to use loop devices
+# Required for grootfs to mount XFS filesystems for container storage
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/garden?/allow_privileged_containers?
+  value: true

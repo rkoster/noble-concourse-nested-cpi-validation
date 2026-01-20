@@ -1,0 +1,7 @@
+# Use Jammy stemcell instead of Noble
+# This works around the kernel restriction on loop device operations
+# from within user namespaces on Ubuntu 24.04 (Noble)
+
+- type: replace
+  path: /stemcells/alias=default/os
+  value: ubuntu-jammy
