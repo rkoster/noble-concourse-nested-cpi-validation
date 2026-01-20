@@ -6,4 +6,4 @@ vm_types:
 
 disk_types:
 - name: concourse
-  disk_size: 20480
+  disk_size: 204800
