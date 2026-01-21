@@ -1,0 +1,79 @@
+---
+name: test-garden
+
+releases:
+- name: garden-runc
+  version: 1.53.0
+- name: os-conf
+  version: 23.0.0
+  url: https://bosh.io/d/github.com/cloudfoundry/os-conf-release?v=23.0.0
+  sha1: sha256:efcf30754ce4c5f308aedab3329d8d679f5967b2a4c3c453204c7cb10c7c5ed9
+
+stemcells:
+- alias: jammy
+  os: ubuntu-jammy
+  version: latest
+- alias: noble
+  os: ubuntu-noble
+  version: latest
+
+instance_groups:
+- name: garden-jammy
+  instances: 1
+  azs: [z1]
+  stemcell: jammy
+  vm_type: default
+  networks:
+  - name: default
+  jobs:
+  - name: garden
+    release: garden-runc
+    properties:
+      garden:
+        listen_network: tcp
+        listen_address: 0.0.0.0:7777
+  - name: pre-start-script
+    release: os-conf
+    properties:
+      script: |
+        #!/bin/bash
+        set -eu
+        
+        echo "Installing gaol CLI..."
+        curl -L -o /usr/local/bin/gaol https://github.com/contraband/gaol/releases/download/2018-12-10/gaol_linux
+        chmod +x /usr/local/bin/gaol
+        echo "gaol installed successfully"
+        gaol --version || echo "gaol version check (may not support --version)"
+
+- name: garden-noble
+  instances: 1
+  azs: [z1]
+  stemcell: noble
+  vm_type: default
+  networks:
+  - name: default
+  jobs:
+  - name: garden
+    release: garden-runc
+    properties:
+      garden:
+        listen_network: tcp
+        listen_address: 0.0.0.0:7777
+  - name: pre-start-script
+    release: os-conf
+    properties:
+      script: |
+        #!/bin/bash
+        set -eu
+        
+        echo "Installing gaol CLI..."
+        curl -L -o /usr/local/bin/gaol https://github.com/contraband/gaol/releases/download/2018-12-10/gaol_linux
+        chmod +x /usr/local/bin/gaol
+        echo "gaol installed successfully"
+        gaol --version || echo "gaol version check (may not support --version)"
+
+update:
+  canaries: 1
+  max_in_flight: 2
+  canary_watch_time: 1000-60000
+  update_watch_time: 1000-60000

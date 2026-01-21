@@ -262,6 +262,44 @@ The Docker container creation process inside the Concourse container may:
 
 This is the same approach used by upstream BOSH CI, which runs Jammy-based Concourse workers for nested BOSH testing.
 
+## Quick Reproduction Test
+
+A script is provided to quickly reproduce and diagnose this issue on any BOSH deployment:
+
+```bash
+./test-loop-in-namespace.sh <deployment-name> <vm-name>
+
+# Examples:
+./test-loop-in-namespace.sh concourse concourse/0
+./test-loop-in-namespace.sh test-noble test-vm/0
+```
+
+The script performs three tests via BOSH SSH:
+1. **Test 1**: Loop device in root namespace (should always work)
+2. **Test 2**: Can unprivileged user namespaces be created? 
+   - ✅ **Jammy**: YES - Guardian/Garden can create containers
+   - ❌ **Noble**: NO - Blocked by `kernel.apparmor_restrict_unprivileged_userns = 1`
+3. **Test 3**: Loop device with `CAP_SYS_ADMIN` in user namespace (simulates Garden)
+   - Shows that IF namespaces could be created, loop devices would work
+
+**Key Finding**: Noble blocks the creation of unprivileged user namespaces entirely, which prevents Guardian/Garden from even creating containers, let alone using loop devices within them.
+
+### Example Output on Noble (Broken)
+```
+=== Test 2: Can unprivileged user namespaces be created? ===
+unshare: write failed /proc/self/uid_map: Operation not permitted
+❌ FAILED: Unprivileged user namespaces blocked
+   Error: kernel.apparmor_restrict_unprivileged_userns = 1
+   Guardian/Garden CANNOT create containers
+```
+
+### Example Output on Jammy (Working)
+```
+=== Test 2: Can unprivileged user namespaces be created? ===
+✅ SUCCESS: Unprivileged user namespaces allowed
+   Guardian/Garden can create containers
+```
+
 ### Why This Works
 
 - Jammy kernel 5.15 does not have `kernel.apparmor_restrict_unprivileged_userns` restriction
