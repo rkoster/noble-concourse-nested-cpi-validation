@@ -5,7 +5,7 @@ set -euo pipefail
 # This demonstrates that even with privileged containers, Noble blocks loop devices
 # in unprivileged user namespaces which Guardian uses for container isolation
 
-DEPLOYMENT="${1:-test-garden}"
+DEPLOYMENT="test-garden"
 
 echo "=== Testing Garden Loop Device Access on Both Stemcells ==="
 echo "Deployment: ${DEPLOYMENT}"
