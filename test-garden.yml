@@ -26,19 +26,22 @@ instance_groups:
   instances: 1
   azs: [z1]
   stemcell: jammy
-  vm_type: default
+  vm_type: garden-test
   networks:
   - name: default
   jobs:
   - name: garden
     release: garden-runc
-    properties:
+    properties: &garden-props
       garden:
         listen_network: tcp
         listen_address: 0.0.0.0:7777
+      grootfs:
+        insecure_docker_registry_list:
+        - "10.246.0.21:5000"
   - name: pre-start-script
     release: os-conf
-    properties:
+    properties: &pre-start-props
       script: |
         #!/bin/bash
         set -eu
@@ -47,34 +50,39 @@ instance_groups:
         curl -L -o /usr/local/bin/gaol https://github.com/contraband/gaol/releases/download/2018-12-10/gaol_linux
         chmod +x /usr/local/bin/gaol
         echo "gaol installed successfully"
-        gaol --version || echo "gaol version check (may not support --version)"
+
+        echo "
+        #!/bin/bash
+        gaol destroy test-warden || true
+        gaol create -r docker://10.246.0.21:5000/upstream-warden-cpi:latest -p -n test-warden
+        gaol run test-warden -a -c /var/vcap/jobs/garden/bin/pre-start
+        gaol run test-warden -a -c '/var/vcap/jobs/garden/bin/garden_ctl start'
+        gaol run test-warden -a -c 'tail -n 2 /var/vcap/sys/log/garden/garden_ctl.stderr.log /var/vcap/sys/log/garden/garden_ctl.stdout.log'
+        gaol destroy test-warden
+        " > /usr/bin/garden-cpi-test
+        chmod +x /usr/bin/garden-cpi-test
 
 - name: garden-noble
   instances: 1
   azs: [z1]
   stemcell: noble
-  vm_type: default
+  vm_type: garden-test
   networks:
   - name: default
   jobs:
   - name: garden
     release: garden-runc
-    properties:
-      garden:
-        listen_network: tcp
-        listen_address: 0.0.0.0:7777
+    properties: *garden-props
   - name: pre-start-script
     release: os-conf
+    properties: *pre-start-props
+  - name: sysctl
+    release: os-conf
     properties:
-      script: |
-        #!/bin/bash
-        set -eu
-        
-        echo "Installing gaol CLI..."
-        curl -L -o /usr/local/bin/gaol https://github.com/contraband/gaol/releases/download/2018-12-10/gaol_linux
-        chmod +x /usr/local/bin/gaol
-        echo "gaol installed successfully"
-        gaol --version || echo "gaol version check (may not support --version)"
+      sysctl:
+      # https://askubuntu.com/questions/1545324/solved-ubuntu-24-04-broke-sandboxing-how2-fix
+      - kernel.apparmor_restrict_unprivileged_userns=0
+      - kernel.unprivileged_userns_clone=1
 
 update:
   canaries: 1
