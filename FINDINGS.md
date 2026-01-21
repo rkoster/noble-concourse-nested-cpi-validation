@@ -307,6 +307,61 @@ unshare: write failed /proc/self/uid_map: Operation not permitted
 - No changes needed to Guardian/Garden configuration
 - Maintains security through user namespace isolation (just without the additional 6.x restrictions)
 
+### Garden-runc 1.83.0 Testing (Noble Investigation)
+
+**Objective**: Test if newer garden-runc versions with containerd integration work on Noble stemcells
+
+**Test Setup**:
+- Deployed garden-runc 1.83.0 (latest release) on both Jammy and Noble VMs
+- Version includes containerd integration (`containerd.dns_servers` support, containerd socket at `/var/vcap/sys/run/containerd/containerd.sock`)
+- Created privileged containers using gaol CLI
+- Tested container creation and basic functionality
+
+**Results**:
+- **Jammy**: ✅ garden-runc 1.83.0 successfully creates containers
+- **Noble**: ✅ garden-runc 1.83.0 successfully creates containers (!!)
+
+**Key Observation**:
+Garden-runc 1.83.0 with containerd integration CAN create containers on Noble stemcells, despite the `kernel.apparmor_restrict_unprivileged_userns = 1` restriction.
+
+**Container Details**:
+```bash
+# Noble VM shows:
+✅ Garden container created: test-noble-XXXXX
+
+# Runtime used:
+containerd-shim-runc-v2 with:
+- UID/GID mapping: --uid-map-start=1 --uid-map-length=4294967293
+- Namespace: garden
+- Containerd socket: /var/vcap/sys/run/containerd/containerd.sock
+```
+
+**Limitation - Unable to Test Nested Scenario**:
+The test-garden deployment uses minimal Garden configuration without rootfs images. Containers created are completely empty (no shell, no binaries). This prevented us from:
+1. Running loop device tests inside the Garden containers
+2. Testing the actual nested scenario (Garden → nested Docker → nested Garden)
+3. Verifying if grootfs overlay-xfs-setup works inside Garden containers on Noble
+
+**What Was Actually Tested**:
+- ✅ Container creation via Garden API on bare Noble VMs
+- ❌ Loop device access inside Garden containers (blocked by empty containers)
+- ❌ Nested containerization scenario (requires populated rootfs)
+
+**Conclusion**:
+garden-runc 1.83.0 shows promise for Noble support as it successfully creates containers on bare Noble VMs. However, **we cannot confirm if it solves the nested BOSH problem** without testing:
+1. Whether loop devices work inside Garden containers on Noble
+2. Whether the nested scenario (Concourse containerd → Docker → Garden) works
+3. Whether grootfs can initialize its XFS-backed storage inside Noble Garden containers
+
+**Next Steps for Full Validation**:
+To properly test if garden-runc 1.83.0 enables Noble support for nested BOSH:
+1. Deploy Concourse with Noble stemcells and garden-runc 1.83.0+
+2. Run the actual nested-bosh-zookeeper pipeline
+3. Monitor if Garden starts successfully inside the nested Docker container
+4. Verify grootfs initialization and loop device operations work end-to-end
+
+**Current Recommendation Unchanged**: Continue using Jammy stemcells for Concourse workers until garden-runc 1.83.0+ is validated in the full nested containerization scenario.
+
 ### Alternative Solutions (Not Recommended)
 
 1. **Docker CPI**: Already working in pipeline but different from production BOSH
