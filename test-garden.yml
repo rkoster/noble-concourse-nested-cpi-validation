@@ -54,13 +54,127 @@ instance_groups:
         echo "
         #!/bin/bash
         gaol destroy test-warden || true
-        gaol create -r docker://10.246.0.21:5000/upstream-warden-cpi:latest -p -n test-warden
+        gaol create -r docker://10.246.0.21:5000/upstream-warden-cpi:latest \
+          -p -n test-warden \
+          -m /dev/loop-control:/dev/loop-control \
+          -m /dev/loop0:/dev/loop0 \
+          -m /dev/loop1:/dev/loop1 \
+          -m /dev/loop2:/dev/loop2 \
+          -m /dev/loop3:/dev/loop3 \
+          -m /dev/loop4:/dev/loop4 \
+          -m /dev/loop5:/dev/loop5 \
+          -m /dev/loop6:/dev/loop6 \
+          -m /dev/loop7:/dev/loop7 
         gaol run test-warden -a -c /var/vcap/jobs/garden/bin/pre-start
         gaol run test-warden -a -c '/var/vcap/jobs/garden/bin/garden_ctl start'
         gaol run test-warden -a -c 'tail -n 2 /var/vcap/sys/log/garden/garden_ctl.stderr.log /var/vcap/sys/log/garden/garden_ctl.stdout.log'
         gaol destroy test-warden
         " > /usr/bin/garden-cpi-test
         chmod +x /usr/bin/garden-cpi-test
+
+        cat << EOF > /usr/bin/garden-loop-test
+        #!/bin/bash
+        gaol destroy test-loop || true
+        gaol create -r docker://10.246.0.21:5000/upstream-warden-cpi:latest \
+          -p -n test-loop \
+          -m /dev/loop-control:/dev/loop-control \
+          -m /dev/loop0:/dev/loop0 \
+          -m /dev/loop1:/dev/loop1 \
+          -m /dev/loop2:/dev/loop2 \
+          -m /dev/loop3:/dev/loop3 \
+          -m /dev/loop4:/dev/loop4 \
+          -m /dev/loop5:/dev/loop5 \
+          -m /dev/loop6:/dev/loop6 \
+          -m /dev/loop7:/dev/loop7
+
+        gaol run test-loop -a -c '\
+          ls -l /dev/loop-control /dev/loop0 2>/dev/null || echo "no loop dev nodes"; \
+          lsmod | grep -w loop || modprobe loop; \
+          dd if=/dev/zero of=/tmp/loop.img bs=1M count=16; \
+          losetup -f --show /tmp/loop.img || echo "losetup failed"; \
+          losetup -a; \
+          which mkfs.xfs mount.xfs || echo "xfsprogs missing" \
+          '
+
+        gaol destroy test-loop
+        EOF
+        chmod +x /usr/bin/garden-loop-test
+
+        # sudo apt install linux-tools-common linux-tools-generic linux-tools-$(uname -r)
+        cat << EOF > /usr/bin/garden-bpf-test
+        #!/bin/bash
+
+        gaol list | xargs gaol destroy
+        gaol create -r docker://10.246.0.21:5000/upstream-warden-cpi:latest \
+          -p -n test-bpf
+
+        CONTPID=\$(sudo lsns | grep garden-init | head -n1 | cut -d' ' -f12)
+        echo "Container task PID: \$CONTPID"
+
+        # On cgroup v2, /proc/<pid>/cgroup has a single "0:" entry with the unified path
+        awk -F: '\$1=="0"{print \$3}' /proc/\$CONTPID/cgroup
+
+        # Build the full cgroup path
+        CGDIR="/sys/fs/cgroup\$(awk -F: '\$1=="0"{print \$3}' /proc/\$CONTPID/cgroup)"
+        echo "Container cgroup v2 dir: \$CGDIR"
+
+        # Sanity: the PID should be listed in the cgroup
+        grep -w "\$CONTPID" "\$CGDIR/cgroup.procs" || echo "PID not present (it may have exited)"
+
+        bpftool cgroup show \$CGDIR effective
+        EOF
+        chmod +x /usr/bin/garden-bpf-test
+
+        cat << EOF > /usr/bin/garden-bpf-detach-test
+        #!/bin/bash
+
+        gaol list | xargs gaol destroy
+
+        losetup -d /dev/loop{2,3,4,5,6,7}
+        gaol create -r docker://10.246.0.21:5000/upstream-warden-cpi:latest \
+          -p -n test-bpf-detach \
+          -m /dev/loop-control:/dev/loop-control \
+          -m /dev/loop2:/dev/loop2 \
+          -m /dev/loop3:/dev/loop3 \
+          -m /dev/loop4:/dev/loop4 \
+          -m /dev/loop5:/dev/loop5 \
+          -m /dev/loop6:/dev/loop6 \
+          -m /dev/loop7:/dev/loop7 > /dev/null
+
+
+        CGDIR=/sys/fs/cgroup/system.slice/test-bpf-detach
+        sudo bpftool cgroup show "\$CGDIR" \
+         | awk 'NR>1 && \$2 == "cgroup_device" {print \$1}' \
+         | xargs -r -n1 sudo bpftool cgroup detach "\$CGDIR" dev id
+
+        echo -e "\nattached cgroup devices:"          
+        bpftool cgroup show "\$CGDIR" effective
+
+        echo -e "\ndevices:"
+        gaol run test-bpf-detach -a -c 'ls -l /dev/loop-control /dev/loop2 2>/dev/null'
+
+        echo -e "\nmake loop image:"
+        gaol run test-bpf-detach -a -c 'dd if=/dev/zero of=/tmp/loop.img bs=1M count=16'
+
+        echo -e "\nlosetup:"
+        gaol run test-bpf-detach -a -c 'losetup -f --show /tmp/loop.img && losetup -a'
+
+        echo -e "\nformat xfs:"
+        LOOP_DEV=\$(gaol run test-bpf-detach -a -c "losetup -f --show /tmp/loop.img" | tr -d '\r')
+        echo "LOOP_DEV=\$LOOP_DEV"
+
+        gaol run test-bpf-detach -a -c "mkfs.ext4 -F \${LOOP_DEV}"
+
+        echo -e "\nmount xfs:"
+        gaol run test-bpf-detach -a -c "mkdir /mnt/x"
+        gaol run test-bpf-detach -a -c "mount \${LOOP_DEV} /mnt/x"
+        gaol run test-bpf-detach -a -c 'df -h /mnt/x'
+
+        echo -e "\nunmount xfs:"
+        gaol run test-bpf-detach -a -c 'umount /mnt/x'
+
+        EOF
+        chmod +x /usr/bin/garden-bpf-detach-test
 
 - name: garden-noble
   instances: 1
@@ -81,8 +195,12 @@ instance_groups:
     properties:
       sysctl:
       # https://askubuntu.com/questions/1545324/solved-ubuntu-24-04-broke-sandboxing-how2-fix
-      - kernel.apparmor_restrict_unprivileged_userns=0
-      - kernel.unprivileged_userns_clone=1
+      # - kernel.apparmor_restrict_unprivileged_userns=1
+      # - kernel.unprivileged_userns_clone=1
+
+      - kernel.apparmor_restrict_unprivileged_userns = 0
+      - kernel.unprivileged_userns_apparmor_policy = 0
+      # - kernel.unprivileged_userns_clone = 1
 
 update:
   canaries: 1
