@@ -48,6 +48,7 @@ bosh -n deploy \
   -o "${SCRIPT_DIR}/ops-files/docker-registry.yml" \
   -o "${SCRIPT_DIR}/ops-files/garden-allow-host-access.yml" \
   -o "${SCRIPT_DIR}/ops-files/guardian-runtime.yml" \
+  -o "${SCRIPT_DIR}/ops-files/external-garden.yml" \
   --vars-store="${VARS_FILE}" \
   -v concourse_version="${CONCOURSE_VERSION}" \
   -v concourse_sha1="${CONCOURSE_SHA1}" \

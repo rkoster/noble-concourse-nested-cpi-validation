@@ -5,9 +5,9 @@ name: test-garden
 # Previous versions (1.53.0) failed on Noble due to unprivileged user namespace restrictions
 releases:
 - name: garden-runc
-  version: 1.83.0
-  url: https://bosh.io/d/github.com/cloudfoundry/garden-runc-release?v=1.83.0
-  sha1: sha256:44c35392d9ab588232c71ccf45d9d11cf319490b18a9cf585712b57c69a2223a
+  version: latest
+  # url: https://bosh.io/d/github.com/cloudfoundry/garden-runc-release?v=1.83.0
+  # sha1: sha256:44c35392d9ab588232c71ccf45d9d11cf319490b18a9cf585712b57c69a2223a
 - name: os-conf
   version: 23.0.0
   url: https://bosh.io/d/github.com/cloudfoundry/os-conf-release?v=23.0.0
@@ -141,6 +141,8 @@ instance_groups:
           -m /dev/loop6:/dev/loop6 \
           -m /dev/loop7:/dev/loop7 > /dev/null
 
+        echo -e "\nattached cgroup devices (before detach):"          
+        bpftool cgroup show "\$CGDIR" effective          
 
         CGDIR=/sys/fs/cgroup/system.slice/test-bpf-detach
         sudo bpftool cgroup show "\$CGDIR" \

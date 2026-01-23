@@ -1,0 +1,23 @@
+- type: replace
+  path: /releases/-
+  value:
+    name: garden-runc
+    version: latest
+
+- type: replace
+  path: /instance_groups/name=concourse/jobs/-
+  value:
+    name: garden
+    release: garden-runc
+    properties:
+      garden:
+        listen_address: 0.0.0.0:7777
+        listen_network: tcp
+        network_pool: 10.80.0.0/16
+      grootfs:
+        insecure_docker_registry_list:
+        - 10.246.0.21:5000
+
+- type: replace
+  path: /instance_groups/name=concourse/jobs/name=worker/properties/external_garden_url?
+  value: tcp://127.0.0.1:7777
