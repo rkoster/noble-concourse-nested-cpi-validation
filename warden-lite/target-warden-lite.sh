@@ -12,7 +12,7 @@ if [ ! -f "${VARS_FILE}" ]; then
   exit 1
 fi
 
-WARDEN_IP=$(bosh -d "${DEPLOYMENT_NAME}" instances --column=ips | grep -v "^Deployment" | grep -v "^$" | head -1)
+WARDEN_IP=$(bosh -d "${DEPLOYMENT_NAME}" instances --column=ips | grep -v "^Deployment" | grep -v "^$" | head -1 | tr -d '[:space:]')
 
 if [ -z "${WARDEN_IP}" ]; then
   echo "Error: Could not determine warden-lite director IP"

@@ -33,7 +33,7 @@ bosh_protocol: '1'
 sha1: da39a3ee5e6b4b0d3255bfef95601890afd80709
 operating_system: ${OS_NAME}
 stemcell_formats:
-- warden-light
+- docker-light
 cloud_properties:
   image_reference: "${IMAGE_URL}"
 EOF
