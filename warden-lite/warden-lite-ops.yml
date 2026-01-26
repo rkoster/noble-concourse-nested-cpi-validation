@@ -14,4 +14,4 @@
   path: /releases/-
   value:
     name: bosh-warden-cpi
-    version: 45.0.11+dev.1
+    version: 45.0.11+dev.1769453995

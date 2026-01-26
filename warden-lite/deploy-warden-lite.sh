@@ -5,6 +5,13 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Use devbox bosh if available
+if [ -f "${REPO_ROOT}/.devbox/nix/profile/default/bin/bosh" ]; then
+  BOSH_CMD="${REPO_ROOT}/.devbox/nix/profile/default/bin/bosh"
+else
+  BOSH_CMD="bosh"
+fi
+
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-warden-lite}"
 VARS_FILE="${VARS_FILE:-${SCRIPT_DIR}/vars.yml}"
 
@@ -21,7 +28,7 @@ if [ ! -d "${REPO_ROOT}/vendor/bosh-deployment" ]; then
 fi
 
 echo "Deploying warden lite BOSH director..."
-bosh -n deploy \
+${BOSH_CMD} -n deploy \
   -d "${DEPLOYMENT_NAME}" \
   "${REPO_ROOT}/vendor/bosh-deployment/bosh.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/bosh-lite.yml" \

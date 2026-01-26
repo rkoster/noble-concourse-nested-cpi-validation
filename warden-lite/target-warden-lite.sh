@@ -3,8 +3,15 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VARS_FILE="${VARS_FILE:-${SCRIPT_DIR}/vars.yml}"
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-warden-lite}"
+
+if [ -f "${REPO_ROOT}/.devbox/nix/profile/default/bin/bosh" ]; then
+  BOSH_CMD="${REPO_ROOT}/.devbox/nix/profile/default/bin/bosh"
+else
+  BOSH_CMD="bosh"
+fi
 
 if [ ! -f "${VARS_FILE}" ]; then
   echo "Error: Vars file not found: ${VARS_FILE}"
@@ -12,7 +19,7 @@ if [ ! -f "${VARS_FILE}" ]; then
   exit 1
 fi
 
-WARDEN_IP=$(bosh -d "${DEPLOYMENT_NAME}" instances --column=ips | grep -v "^Deployment" | grep -v "^$" | head -1 | tr -d '[:space:]')
+WARDEN_IP=$(${BOSH_CMD} -d "${DEPLOYMENT_NAME}" instances --column=ips | grep -v "^Deployment" | grep -v "^$" | head -1 | tr -d '[:space:]')
 
 if [ -z "${WARDEN_IP}" ]; then
   echo "Error: Could not determine warden-lite director IP"
@@ -21,8 +28,8 @@ if [ -z "${WARDEN_IP}" ]; then
 fi
 
 echo "Extracting credentials from vars file..."
-ADMIN_PASSWORD=$(bosh interpolate "${VARS_FILE}" --path=/admin_password)
-CA_CERT=$(bosh interpolate "${VARS_FILE}" --path=/director_ssl/ca)
+ADMIN_PASSWORD=$(${BOSH_CMD} interpolate "${VARS_FILE}" --path=/admin_password)
+CA_CERT=$(${BOSH_CMD} interpolate "${VARS_FILE}" --path=/director_ssl/ca)
 
 ENV_FILE="${SCRIPT_DIR}/warden-lite.env"
 cat > "${ENV_FILE}" <<EOF
