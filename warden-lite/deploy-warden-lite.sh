@@ -26,6 +26,13 @@ bosh -n deploy \
   "${REPO_ROOT}/vendor/bosh-deployment/bosh.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/bosh-lite.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/warden/cpi.yml" \
+  -o "${REPO_ROOT}/vendor/bosh-deployment/warden/use-jammy.yml" \
+  -o "${REPO_ROOT}/vendor/bosh-deployment/misc/source-releases/bosh.yml" \
+  -o "${REPO_ROOT}/vendor/bosh-deployment/misc/source-releases/bpm.yml" \
+  -o "${REPO_ROOT}/vendor/bosh-deployment/uaa.yml" \
+  -o "${REPO_ROOT}/vendor/bosh-deployment/misc/source-releases/uaa.yml" \
+  -o "${REPO_ROOT}/vendor/bosh-deployment/credhub.yml" \
+  -o "${REPO_ROOT}/vendor/bosh-deployment/misc/source-releases/credhub.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/jumpbox-user.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/misc/bosh-dev.yml" \
   -o "${SCRIPT_DIR}/warden-lite-ops.yml" \

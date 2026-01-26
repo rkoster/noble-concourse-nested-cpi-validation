@@ -6,11 +6,6 @@
   path: /name?
   value: warden-lite
 
-# Use jammy stemcell
-- type: replace
-  path: /stemcells/alias=default/os
-  value: ubuntu-jammy
-
 # Use specific warden-cpi version already uploaded (source release)
 - type: remove
   path: /releases/name=bosh-warden-cpi
@@ -20,13 +15,3 @@
   value:
     name: bosh-warden-cpi
     version: 45.0.11+dev.1
-
-# Use garden-runc source release instead of compiled
-- type: remove
-  path: /releases/name=garden-runc
-
-- type: replace
-  path: /releases/-
-  value:
-    name: garden-runc
-    version: latest
