@@ -26,18 +26,16 @@ bosh -n deploy \
   "${REPO_ROOT}/vendor/bosh-deployment/bosh.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/bosh-lite.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/warden/cpi.yml" \
-  -o "${REPO_ROOT}/vendor/bosh-deployment/uaa.yml" \
-  -o "${REPO_ROOT}/vendor/bosh-deployment/credhub.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/jumpbox-user.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/misc/bosh-dev.yml" \
   -o "${SCRIPT_DIR}/warden-lite-ops.yml" \
   --vars-store="${VARS_FILE}" \
   -v director_name=warden-lite \
-  -v internal_ip=192.168.56.6 \
-  -v internal_gw=192.168.56.1 \
-  -v internal_cidr=192.168.56.0/24 \
-  -v outbound_network_name=NatNetwork \
-  -v garden_host=10.246.0.10
+  -v internal_ip=10.246.0.22 \
+  -v internal_gw=10.246.0.1 \
+  -v internal_cidr=10.246.0.0/16 \
+  -v outbound_network_name=default \
+  -v garden_host=10.246.0.21
 
 echo ""
 echo "Deployment complete!"
