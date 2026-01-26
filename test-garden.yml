@@ -36,6 +36,7 @@ instance_groups:
       garden:
         listen_network: tcp
         listen_address: 0.0.0.0:7777
+        network_pool: 10.80.0.0/16
       grootfs:
         insecure_docker_registry_list:
         - "10.246.0.21:5000"

@@ -14,6 +14,7 @@
         listen_address: 0.0.0.0:7777
         listen_network: tcp
         network_pool: 10.80.0.0/16
+        allow_host_access: true
       grootfs:
         insecure_docker_registry_list:
         - 10.246.0.21:5000

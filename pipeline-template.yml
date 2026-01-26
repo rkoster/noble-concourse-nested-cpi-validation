@@ -74,7 +74,7 @@ resources:
     type: git
     icon: github
     source:
-      uri: https://github.com/cloudfoundry/bosh.git
+      uri: https://github.com/rkoster/bosh.git
       branch: noble-cut-over
       paths:
         - ci/dockerfiles/warden-cpi
