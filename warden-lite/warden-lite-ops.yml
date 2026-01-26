@@ -1,0 +1,12 @@
+# Ops file for deploying a warden BOSH lite director using bosh deploy
+# This configures the deployment to use bosh-warden-cpi and jammy stemcell
+
+# Use jammy stemcell (noble doesn't work yet)
+- type: replace
+  path: /stemcells/alias=default/os
+  value: ubuntu-jammy
+
+# Use specific warden-cpi version already uploaded
+- type: replace
+  path: /releases/name=bosh-warden-cpi/version
+  value: 45.0.11+dev.1

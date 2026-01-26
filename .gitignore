@@ -1,8 +1,12 @@
-# BOSH variables with secrets
-
 # Vendored dependencies
 vendor/
 vendir.lock.yml
 
 # Local binaries
 bin/
+
+# Warden-lite runtime artifacts
+warden-lite/warden-lite.env
+warden-lite/*.tgz
+*.tgz
+
