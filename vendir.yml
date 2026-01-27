@@ -9,3 +9,11 @@ directories:
       ref: master
     includePaths:
     - lite/concourse.yml
+  - path: bosh-deployment
+    git:
+      url: https://github.com/cloudfoundry/bosh-deployment
+      ref: master
+  - path: zookeeper-release
+    git:
+      url: https://github.com/cppforlife/zookeeper-release
+      ref: master

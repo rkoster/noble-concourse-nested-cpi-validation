@@ -1,0 +1,9 @@
+---
+# Use zookeeper release from bosh.io instead of requiring local upload
+- type: replace
+  path: /releases/name=zookeeper
+  value:
+    name: "zookeeper"
+    version: "0.0.10"
+    url: "https://bosh.io/d/github.com/cppforlife/zookeeper-release?v=0.0.10"
+    sha1: sha256:9aacfe55e4bd4feea85428535bd6dd1e7fb775e317e48b44b3f86c71dcec6373

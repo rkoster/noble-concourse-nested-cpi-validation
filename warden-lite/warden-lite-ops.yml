@@ -1,0 +1,17 @@
+# Ops file for deploying a warden BOSH lite director using bosh deploy
+# This configures the deployment to use bosh-warden-cpi with jammy stemcell
+
+# Set deployment name to match -d flag
+- type: replace
+  path: /name?
+  value: warden-lite
+
+# Use specific warden-cpi version already uploaded (source release)
+- type: remove
+  path: /releases/name=bosh-warden-cpi
+
+- type: replace
+  path: /releases/-
+  value:
+    name: bosh-warden-cpi
+    version: 45.0.11+dev.1769462567

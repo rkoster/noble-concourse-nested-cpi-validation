@@ -1,0 +1,5 @@
+---
+# Use latest available stemcell version for zookeeper deployment
+- type: replace
+  path: /stemcells/alias=default/version
+  value: latest
