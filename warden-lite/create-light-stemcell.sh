@@ -4,7 +4,7 @@ set -euo pipefail
 
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <image_url> [output_file]"
-    echo "Example: $0 ghcr.io/cloudfoundry/package/ubuntu-jammy-stemcell:latest light-stemcell-jammy.tgz"
+    echo "Example: $0 ghcr.io/cloudfoundry/ubuntu-jammy-stemcell:latest light-stemcell-jammy.tgz"
     exit 1
 fi
 

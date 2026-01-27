@@ -141,8 +141,8 @@ Generates light stemcell tarball from OCI image reference.
 # Public Docker Hub
 ./create-light-stemcell.sh docker.io/library/ubuntu:jammy
 
-# Public GHCR
-./create-light-stemcell.sh ghcr.io/cloudfoundry/bosh-ubuntu-jammy-stemcell:latest
+# Public GHCR (official CF stemcell)
+./create-light-stemcell.sh ghcr.io/cloudfoundry/ubuntu-jammy-stemcell:latest
 
 # Private registry (requires auth in Garden config)
 ./create-light-stemcell.sh ghcr.io/private/stemcell:latest private-stemcell.tgz
