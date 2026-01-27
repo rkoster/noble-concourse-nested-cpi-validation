@@ -12,15 +12,21 @@ echo "  Deployment name: ${DEPLOYMENT_NAME}"
 echo "  BOSH environment: ${BOSH_ENVIRONMENT}"
 echo ""
 
+if [ ! -d "${REPO_ROOT}/vendor/bosh-deployment" ]; then
+  echo "Error: bosh-deployment not found in vendor/"
+  echo "Run: vendir sync"
+  exit 1
+fi
+
 if [ ! -d "${REPO_ROOT}/vendor/zookeeper-release" ]; then
   echo "Error: zookeeper-release not found in vendor/"
   echo "Run: vendir sync"
   exit 1
 fi
 
-echo "Uploading zookeeper release (if not already uploaded)..."
-bosh upload-release --name=zookeeper \
-  "${REPO_ROOT}/vendor/zookeeper-release/releases/zookeeper/zookeeper-0.0.10.yml" || true
+echo "Uploading cloud config (if not already configured)..."
+bosh update-cloud-config -n \
+  "${REPO_ROOT}/vendor/bosh-deployment/warden/cloud-config.yml" || true
 
 echo ""
 echo "Deploying zookeeper..."
@@ -28,7 +34,9 @@ bosh -n deploy \
   -d "${DEPLOYMENT_NAME}" \
   "${REPO_ROOT}/vendor/zookeeper-release/manifests/zookeeper.yml" \
   -o "${REPO_ROOT}/ops-files/zookeeper-single-instance.yml" \
-  -o "${REPO_ROOT}/ops-files/use-jammy-stemcell.yml"
+  -o "${REPO_ROOT}/ops-files/use-jammy-stemcell.yml" \
+  -o "${REPO_ROOT}/ops-files/zookeeper-use-bosh-io-release.yml" \
+  -o "${REPO_ROOT}/ops-files/zookeeper-use-latest-stemcell.yml"
 
 echo ""
 echo "Deployment complete!"
