@@ -1,0 +1,9 @@
+---
+# Increase ephemeral disk size for warden-lite director
+# This ops-file increases the ephemeral disk from the default size to handle
+# light stemcell image unpacking and compilation VMs
+
+- type: replace
+  path: /resource_pools/name=vms/cloud_properties/ephemeral_disk?
+  value:
+    size: 20_000  # 20GB ephemeral disk (default is ~5GB)

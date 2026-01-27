@@ -42,6 +42,7 @@ ${BOSH_CMD} -n deploy \
   -o "${REPO_ROOT}/vendor/bosh-deployment/misc/source-releases/credhub.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/jumpbox-user.yml" \
   -o "${REPO_ROOT}/vendor/bosh-deployment/misc/bosh-dev.yml" \
+  -o "${REPO_ROOT}/ops-files/warden-lite-ephemeral-disk.yml" \
   -o "${SCRIPT_DIR}/warden-lite-ops.yml" \
   --vars-store="${VARS_FILE}" \
   -v director_name=warden-lite \
