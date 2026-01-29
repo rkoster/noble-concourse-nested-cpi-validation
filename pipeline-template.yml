@@ -809,7 +809,48 @@ jobs:
           - get: upstream-warden-cpi-image
             trigger: true
             passed: [build-upstream-warden-cpi-image]
+          - get: noble-patched-stemcell-image
+            trigger: true
+            passed: [build-noble-patched-stemcell-image]
           - get: zookeeper-release
+      - task: create-light-stemcell
+        image: oci-build-task
+        config:
+          platform: linux
+          outputs:
+            - name: light-stemcell
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                echo "=== Creating Light Stemcell Metadata ==="
+                
+                IMAGE_URL="((docker_registry_host))/ubuntu-noble-stemcell-patched:latest"
+                OUTPUT_DIR="light-stemcell"
+                
+                mkdir -p "$OUTPUT_DIR"
+                
+                # Create stemcell metadata in BOSH standard format
+                cat > "$OUTPUT_DIR/stemcell.MF" <<'STEMCELL_MF'
+                ---
+                name: bosh-warden-ubuntu-noble
+                version: "light"
+                api_version: 3
+                bosh_protocol: '1'
+                sha1: da39a3ee5e6b4b0d3255bfef95601890afd80709
+                operating_system: ubuntu-noble
+                stemcell_formats:
+                - warden-light
+                cloud_properties:
+                  image_reference: "((docker_registry_host))/ubuntu-noble-stemcell-patched:latest"
+                STEMCELL_MF
+                
+                # Create empty image file (required by BOSH stemcell format)
+                touch "$OUTPUT_DIR/image"
+                
+                echo "Stemcell metadata:"
+                cat "$OUTPUT_DIR/stemcell.MF"
       - task: deploy-with-upstream-warden-cpi
         privileged: true
         image: upstream-warden-cpi-image
@@ -817,6 +858,7 @@ jobs:
           platform: linux
           inputs:
             - name: zookeeper-release
+            - name: light-stemcell
           run:
             path: bash
             args:
@@ -824,9 +866,10 @@ jobs:
               - |
                 set -euo pipefail
                 
-                echo "=== Upstream Warden CPI Test (Unmodified) ==="
+                echo "=== Upstream Warden CPI Test with Light Stemcell ==="
                 echo "This uses the exact upstream warden-cpi image from cloudfoundry/bosh"
                 echo "Base image: bosh/main-bosh-docker"
+                echo "Stemcell: Light stemcell referencing patched ubuntu-noble image"
                 
                 # Mount cgroup filesystem for Garden
                 echo "=== Setting up cgroup v2 ==="
@@ -843,10 +886,12 @@ jobs:
                 echo "=== BOSH Environment ==="
                 bosh env
                 
-                # Upload stemcell
-                echo "=== Uploading Warden Stemcell ==="
-                bosh upload-stemcell --sha1 86662513fbbb9200aca8f0c24fa69e822f49e18c \
-                  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.631
+                # Create light stemcell tarball and upload
+                echo "=== Uploading Light Stemcell ==="
+                cd light-stemcell
+                tar -czf /tmp/light-stemcell.tgz stemcell.MF image
+                cd ..
+                bosh upload-stemcell /tmp/light-stemcell.tgz
                 
                 # Upload zookeeper release
                 echo "=== Uploading Zookeeper Release ==="
@@ -855,9 +900,9 @@ jobs:
                 bosh upload-release
                 cd ..
                 
-                # Deploy zookeeper
-                echo "=== Deploying Zookeeper ==="
-                cat > /tmp/single-instance.yml <<'OPSFILE'
+                # Deploy zookeeper with light stemcell
+                echo "=== Deploying Zookeeper with Light Stemcell ==="
+                cat > /tmp/light-stemcell-ops.yml <<'OPSFILE'
                 ---
                 - type: replace
                   path: /instance_groups/name=zookeeper/instances
@@ -868,14 +913,17 @@ jobs:
                 - type: remove
                   path: /instance_groups/name=smoke-tests
                 - type: replace
-                  path: /stemcells/alias=default/os
-                  value: ubuntu-jammy
+                  path: /stemcells
+                  value:
+                    - alias: default
+                      os: ubuntu-noble
+                      version: light
                 OPSFILE
                 
                 bosh -n deploy \
                   -d zookeeper \
                   zookeeper-release/manifests/zookeeper.yml \
-                  -o /tmp/single-instance.yml
+                  -o /tmp/light-stemcell-ops.yml
                 
                 echo "=== Zookeeper Deployment Status ==="
                 bosh -d zookeeper instances --details
