@@ -10,7 +10,7 @@ This is a BOSH operations repository focused on:
 - Testing deployment workflows with zookeeper-release as a validation target
 - Validating nested containerization on Ubuntu Noble (24.04) with cgroup v2
 
-**Tech Stack**: Bash scripting, BOSH manifests (YAML), Concourse pipelines (YAML/YTT), vendir for dependency management
+**Tech Stack**: Bash scripting, BOSH manifests (YAML), Concourse pipelines (YAML/YTT), Ruby (for BOSH job installation scripts), vendir for dependency management
 
 **Key Achievement**: Successfully runs nested BOSH director in Docker inside Concourse worker container with cgroup v2 support
 
@@ -39,11 +39,17 @@ vendir sync
 
 ### Pipeline Operations
 ```bash
+# Preview pipeline changes without applying (DRY-RUN)
+./repipe.sh --dry-run
+
 # Set and unpause the nested BOSH pipeline
 ./repipe.sh
 
-# Trigger the pipeline job manually
+# Trigger a specific pipeline job manually
 fly -t local trigger-job -j nested-bosh-zookeeper/deploy-zookeeper-on-docker-bosh -w
+
+# Trigger any job (replace <job-name>)
+fly -t local trigger-job -j nested-bosh-zookeeper/<job-name> -w
 
 # Check resource status
 fly -t local check-resource -r nested-bosh-zookeeper/zookeeper-release
@@ -70,6 +76,23 @@ bosh -d concourse ssh -c "sudo tail -100 /var/vcap/sys/log/worker/worker.stderr.
 bosh -d concourse delete-deployment -n
 ```
 
+### Testing
+
+```bash
+# Test Garden deployment with specific manifest
+bosh deploy -d test-garden test-garden.yml
+
+# Run manual Garden tests in namespace
+./test-loop-in-namespace.sh
+
+# Test Garden stemcell compatibility
+./test-garden-stemcells.sh
+
+# Debug build issues (runs docker build with verbose output)
+./debug-build.sh
+```
+
+
 ## Code Style Guidelines
 
 ### Shell Scripts
@@ -89,7 +112,7 @@ bosh -d concourse delete-deployment -n
 **Script Structure**:
 ```bash
 #!/bin/bash
-set -eu
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-concourse}"
@@ -100,7 +123,52 @@ echo "Starting deployment..."
 **Error Handling**:
 - Check command availability: `if ! command -v fly &> /dev/null; then`
 - Validate file existence: `if [ ! -f "${FILE}" ]; then`
-- Use meaningful error messages: `echo "Error: Pipeline file not found."`
+- Use meaningful error messages: `echo "Error: Pipeline file not found." >&2`
+- Exit with non-zero on errors: `exit 1`
+
+**Command-Line Parsing**:
+```bash
+# Use while loop with case for flags
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--dry-run]"
+      exit 1
+      ;;
+  esac
+done
+```
+
+### Ruby Scripts
+
+**Purpose**: Used for BOSH job installation and templating in Docker images
+
+**Style**:
+- Use 2-space indentation
+- Use snake_case for variables and methods
+- Use clear, descriptive variable names
+- Use blocks with `{...}` for single-line operations
+- Use `do...end` for multi-line blocks
+
+**Example Pattern**:
+```ruby
+require 'yaml'
+require 'json'
+require 'fileutils'
+
+%w{/var/vcap/sys/run /var/vcap/sys/log}.each {|path| FileUtils.mkdir_p path}
+
+config = YAML.load_file(config_path)
+config['packages'].each do |package_name|
+  package_path = File.join('/', 'var', 'vcap', 'packages', package_name)
+  FileUtils.mkdir_p(package_path)
+end
+```
 
 ### YAML Files
 
@@ -121,6 +189,11 @@ echo "Starting deployment..."
   - name: default
     static_ips: [((concourse_static_ip))]
 ```
+
+**Concourse Pipeline Jobs** (modular structure):
+- Each job in separate file in `pipeline-jobs/` directory
+- Use plain job definition (no overlay syntax)
+- Start directly with job definition: `- name: job-name`
 
 **YTT Templating Pattern** (for embedding scripts in pipelines):
 ```yaml
@@ -186,6 +259,12 @@ EOF
 - DNS configuration: Use `containerd.dns_servers` property, not `garden.dns_servers`
 - Pipelines should use remote resources only (GitHub repos, Docker images)
 - Inline ops-files and configuration using heredocs in task scripts
+
+### Pipeline Modular Structure
+- `pipeline-jobs/schema.yml` - YTT data values schema (passed separately to ytt)
+- `pipeline-jobs/resources.yml` - All Concourse resources with YTT header
+- `pipeline-jobs/*.yml` - Individual job definitions (one per file)
+- `repipe.sh` combines all files: schema + resources + jobs
 
 ## Environment Variables
 
