@@ -1,0 +1,76 @@
+  - name: build-patched-upstream-warden-cpi-image
+    plan:
+      - in_parallel:
+          - get: upstream-warden-cpi-image
+            trigger: true
+            passed: [build-upstream-warden-cpi-image]
+          - get: oci-build-task
+      - task: create-patched-dockerfile
+        image: oci-build-task
+        config:
+          platform: linux
+          outputs:
+            - name: build-context
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                mkdir -p build-context
+                cat > build-context/Dockerfile << 'DOCKERFILE'
+                ARG BASE_IMAGE
+                FROM $BASE_IMAGE
+
+                # Patch start-bosh to add light stemcell ops-file
+                RUN cat > /tmp/patch.sed << 'SED'
+                /additional_ops_files=""/a\
+                # Add light stemcell ops-file for warden-light format\
+                additional_ops_files="${additional_ops_files} -o /usr/local/warden-light.yml"
+                SED
+
+                RUN sed -i -f /tmp/patch.sed /usr/local/bin/start-bosh
+
+                # Create the warden-light ops-file
+                RUN cat > /usr/local/warden-light.yml << 'OPSFILE'
+                ---
+                - type: replace
+                  path: /stemcells
+                  value:
+                  - alias: default
+                    os: ubuntu-noble
+                    version: light
+                OPSFILE
+
+                DOCKERFILE
+
+                cat build-context/Dockerfile
+      - task: build-image
+        privileged: true
+        image: oci-build-task
+        timeout: 15m
+        config:
+          platform: linux
+          inputs:
+            - name: build-context
+            - name: upstream-warden-cpi-image
+          outputs:
+            - name: image
+          params:
+            CONTEXT: build-context
+            IMAGE_ARG_BASE_IMAGE: upstream-warden-cpi-image/image.tar
+            BUILDKIT_PROGRESS: plain
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
+                 exec build
+      - put: patched-upstream-warden-cpi-image
+        params:
+          image: image/image.tar
+        get_params:
+          skip_download: true
+
+
+  #! Deploy zookeeper using unmodified upstream warden-cpi image for comparison

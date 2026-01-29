@@ -1,0 +1,121 @@
+  - name: build-integration-image
+    plan:
+      - in_parallel:
+          - get: bosh-repo
+            trigger: false
+          - get: bosh-deployment-repo
+            trigger: false
+          - get: ubuntu-image
+          - get: oci-build-task
+      - task: build-docker-args
+        image: ubuntu-image
+        config:
+          platform: linux
+          inputs:
+            - name: bosh-repo
+            - name: bosh-deployment-repo
+          outputs:
+            - name: docker-build-args
+          run:
+            path: bash
+            args:
+              - -exc
+              - |
+                #! Build docker args for integration image
+                #! Simplified version of upstream build-docker-args.sh
+                
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -y
+                apt-get install -y --no-install-recommends ca-certificates curl jq
+                
+                # Fetch latest release URLs from GitHub
+                bosh_cli_url="$(curl -s https://api.github.com/repos/cloudfoundry/bosh-cli/releases/latest \
+                  | jq -r '.assets[] | select(.name | contains ("linux-amd64")) | .browser_download_url')"
+                
+                meta4_cli_url="$(curl -s https://api.github.com/repos/dpb587/metalink/releases/latest \
+                  | jq -r '.assets[] | select(.name | match("meta4-[0-9]+.[0-9]+.[0-9]+-linux-amd64")) | .browser_download_url')"
+                
+                yq_cli_url="$(curl -s https://api.github.com/repos/mikefarah/yq/releases/latest \
+                  | jq -r '.assets[] | select(.name | endswith ("linux_amd64")) | .browser_download_url')"
+                
+                ruby_install_url="$(curl -s https://api.github.com/repos/postmodern/ruby-install/releases/latest \
+                  | jq -r '.assets[] | select(.name | endswith ("tar.gz")) | .browser_download_url')"
+                
+                golangci_lint_install_url="$(curl -s https://api.github.com/repos/golangci/golangci-lint/releases/latest \
+                  | jq -r '.assets[] | select(.name | match("golangci-lint-[0-9]+.[0-9]+.[0-9]+-linux-amd64.tar.gz")) | .browser_download_url')"
+                
+                # Get UAA release URL from bosh-deployment
+                apt-get install -y --no-install-recommends python3-pip python3-venv
+                python3 -m venv /tmp/yq-venv
+                /tmp/yq-venv/bin/pip install yq
+                uaa_release_url="$(/tmp/yq-venv/bin/yq -r '.[] | select(.release == "uaa").value.url' < bosh-deployment-repo/uaa.yml)"
+                
+                ruby_version="$(cat bosh-repo/src/.ruby-version)"
+                
+                # oci-build-task expects build args in plain text format (one per line)
+                # NOT JSON format
+                cat << EOF > docker-build-args/docker-build-args.txt
+                BOSH_CLI_URL=${bosh_cli_url}
+                META4_CLI_URL=${meta4_cli_url}
+                GOLANGCI_LINT_INSTALL_URL=${golangci_lint_install_url}
+                YQ_CLI_URL=${yq_cli_url}
+                RUBY_INSTALL_URL=${ruby_install_url}
+                RUBY_VERSION=${ruby_version}
+                GEM_HOME=/usr/local/bundle
+                UAA_RELEASE_URL=${uaa_release_url}
+                JAVA_INSTALL_PREFIX=/usr/lib/jvm
+                POSTGRES_MAJOR_VERSION=15
+                DEBIAN_FRONTEND=noninteractive
+                EOF
+                
+                echo "=== Docker build args ==="
+                cat docker-build-args/docker-build-args.txt
+      - task: prepare-build-context
+        image: ubuntu-image
+        config:
+          platform: linux
+          inputs:
+            - name: bosh-repo
+            - name: docker-build-args
+          outputs:
+            - name: build-context
+          run:
+            path: bash
+            args:
+              - -exc
+              - |
+                cp bosh-repo/ci/dockerfiles/integration/Dockerfile build-context/
+                cp docker-build-args/docker-build-args.txt build-context/
+                ls -la build-context/
+      - task: build-image
+        privileged: true
+        image: oci-build-task
+        timeout: 2h
+        config:
+          platform: linux
+          inputs:
+            - name: build-context
+          outputs:
+            - name: image
+          params:
+            CONTEXT: build-context
+            BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
+            BUILD_ARG_DEBIAN_FRONTEND: "noninteractive"
+            BUILD_ARGS_FILE: build-context/docker-build-args.txt
+            BUILDKIT_PROGRESS: plain
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                echo "=== Starting integration image build ==="
+                echo "This may take 20-30 minutes on first build..."
+                echo ""
+                mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
+                exec build
+      - put: integration-image
+        params:
+          image: image/image.tar
+        get_params:
+          skip_download: true
+

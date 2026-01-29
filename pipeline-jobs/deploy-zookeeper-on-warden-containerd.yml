@@ -1,0 +1,257 @@
+  - name: deploy-zookeeper-on-warden-containerd
+    plan:
+      - in_parallel:
+          - get: warden-cpi-containerd-image
+            trigger: true
+            passed: [build-warden-cpi-containerd-image]
+          - get: zookeeper-release
+            trigger: false
+
+      - task: deploy-with-warden-cpi
+        image: warden-cpi-containerd-image
+        privileged: true
+        config:
+          platform: linux
+          inputs:
+            - name: zookeeper-release
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -euxo pipefail
+                
+                echo "=== Starting containerd daemon ==="
+                mkdir -p /run/containerd
+                mkdir -p /var/vcap/sys/run/containerd
+                containerd &
+                
+                # Wait for containerd to be ready
+                for i in $(seq 1 30); do
+                  if ctr version >/dev/null 2>&1; then
+                    echo "containerd is ready"
+                    # Create symlink so Garden can find containerd socket
+                    ln -sf /run/containerd/containerd.sock /var/vcap/sys/run/containerd/containerd.sock
+                    echo "Created symlink for containerd socket"
+                    break
+                  fi
+                  echo "Waiting for containerd... ($i/30)"
+                  sleep 1
+                done
+                
+                echo "=== Starting Garden and BOSH Director with Warden CPI (containerd backend) ==="
+                
+                # Start Garden manually with better error handling
+                /var/vcap/jobs/garden/bin/pre-start
+                /var/vcap/jobs/garden/bin/garden_ctl start &
+                
+                # Give Garden time to start
+                sleep 5
+                
+                # Manually check if Garden API is responding
+                echo "=== Checking if Garden API is responding ===" 
+                for i in $(seq 1 30); do
+                  if curl -f http://127.0.0.1:7777/ping 2>/dev/null; then
+                    echo "Garden is responding!"
+                    break
+                  fi
+                  echo "Attempt $i: Garden not ready yet..."
+                  
+                  # Check if garden process is still running
+                  if ! pgrep -f garden > /dev/null; then
+                    echo "ERROR: Garden process has died!"
+                    echo "=== Garden logs ==="
+                    ls -la /var/vcap/sys/log/garden/ || true
+                    echo "=== garden stdout ==="
+                    cat /var/vcap/sys/log/garden/garden.stdout.log 2>/dev/null || echo "No stdout log"
+                    echo "=== garden stderr ==="
+                    cat /var/vcap/sys/log/garden/garden.stderr.log 2>/dev/null || echo "No stderr log"
+                    echo "=== containerd stdout ==="
+                    cat /var/vcap/sys/log/garden/containerd.stdout.log 2>/dev/null || echo "No containerd stdout log"
+                    echo "=== containerd stderr ==="
+                    cat /var/vcap/sys/log/garden/containerd.stderr.log 2>/dev/null || echo "No containerd stderr log"
+                    echo "=== Sleeping for 10 minutes for debugging ==="
+                    sleep 600
+                    exit 1
+                  fi
+                  
+                  sleep 2
+                done
+                
+                # If we get here and Garden still isn't responding, check logs
+                if ! curl -f http://127.0.0.1:7777/ping 2>/dev/null; then
+                  echo "ERROR: Garden never became ready after 30 attempts!"
+                  echo "=== Garden process status ==="
+                  ps aux | grep -E 'garden|containerd' || true
+                  echo "=== Garden logs ==="
+                  ls -la /var/vcap/sys/log/garden/ || true
+                  echo "=== garden stdout ==="
+                  cat /var/vcap/sys/log/garden/garden.stdout.log 2>/dev/null || echo "No stdout log"
+                  echo "=== garden stderr ==="
+                  cat /var/vcap/sys/log/garden/garden.stderr.log 2>/dev/null || echo "No stderr log"
+                  echo "=== containerd stdout ==="
+                  cat /var/vcap/sys/log/garden/containerd.stdout.log 2>/dev/null || echo "No containerd stdout log"
+                  echo "=== containerd stderr ==="
+                  cat /var/vcap/sys/log/garden/containerd.stderr.log 2>/dev/null || echo "No containerd stderr log"
+                  echo "=== Network status ==="
+                  netstat -tlnp || ss -tlnp || true
+                  echo "=== Sleeping for 10 minutes for debugging ==="
+                  sleep 600
+                  exit 1
+                fi
+                
+                # Continue with BOSH director deployment
+                echo "=== Deploying BOSH Director ==="
+                cd /usr/local/bosh-deployment
+                export BOSH_DIRECTOR_IP="192.168.56.6"
+                local_bosh_dir="/tmp/local-bosh/director"
+                mkdir -p ${local_bosh_dir}
+                
+                bosh int bosh.yml \
+                  -o bosh-lite.yml \
+                  -o warden/cpi.yml \
+                  -o uaa.yml \
+                  -o credhub.yml \
+                  -o jumpbox-user.yml \
+                  -o /usr/local/releases/local-releases.yml \
+                  -v director_name=bosh-lite \
+                  -v internal_ip=${BOSH_DIRECTOR_IP} \
+                  -v internal_gw=192.168.56.1 \
+                  -v internal_cidr=192.168.56.0/24 \
+                  -v outbound_network_name=NatNetwork \
+                  -v garden_host=127.0.0.1 > "${local_bosh_dir}/bosh-director.yml"
+                
+                echo "=== Checking for CPI binary dependencies ==="
+                # Extract and check the CPI binary
+                echo "--- Extracting warden CPI release ---"
+                mkdir -p /tmp/warden-cpi-inspect
+                tar -xzf /usr/local/releases/warden-cpi.tgz -C /tmp/warden-cpi-inspect
+                
+                if [ -f /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz ]; then
+                  mkdir -p /tmp/warden-cpi-job
+                  tar -xzf /tmp/warden-cpi-inspect/jobs/warden_cpi.tgz -C /tmp/warden-cpi-job
+                  
+                  echo "--- Checking job bin/cpi template ---"
+                  if [ -f /tmp/warden-cpi-job/templates/cpi.erb ]; then
+                    echo "CPI template exists"
+                    head -20 /tmp/warden-cpi-job/templates/cpi.erb
+                  fi
+                fi
+                
+                echo "=== Running bosh create-env with DEBUG logging ==="
+                BOSH_LOG_LEVEL=debug bosh create-env "${local_bosh_dir}/bosh-director.yml" \
+                     --vars-store="${local_bosh_dir}/creds.yml" \
+                     --state="${local_bosh_dir}/state.json" 2>&1 | tee /tmp/bosh-create-env.log || {
+                  echo "=== BOSH create-env failed, analyzing installation ==="
+                  
+                  echo "--- Checking CPI installation ---"
+                  CPI_PKG_PATH=$(find /root/.bosh -path "*/packages/warden_cpi/bin/cpi" -type f 2>/dev/null | head -1)
+                  if [ -n "$CPI_PKG_PATH" ]; then
+                    echo "Found CPI package binary at: $CPI_PKG_PATH"
+                    ls -lh "$CPI_PKG_PATH"
+                    file "$CPI_PKG_PATH" || echo "file command not available"
+                    
+                    echo "--- Checking CPI binary dependencies (ldd) ---"
+                    ldd "$CPI_PKG_PATH" || echo "ldd check failed - missing dynamic libraries?"
+                    
+                    echo "--- Attempting to run CPI directly ---"
+                    "$CPI_PKG_PATH" || echo "Direct execution failed with exit code: $?"
+                  fi
+                  
+                  echo "--- Checking job wrapper script ---"
+                  JOB_CPI_PATH=$(find /root/.bosh -path "*/jobs/warden_cpi/bin/cpi" -type f 2>/dev/null | head -1)
+                  if [ -n "$JOB_CPI_PATH" ]; then
+                    echo "Found job CPI wrapper at: $JOB_CPI_PATH"
+                    ls -lh "$JOB_CPI_PATH"
+                    echo "--- CPI wrapper script content (first 30 lines) ---"
+                    head -30 "$JOB_CPI_PATH"
+                  fi
+                  
+                  echo "--- Last 100 lines of bosh create-env debug log ---"
+                  tail -100 /tmp/bosh-create-env.log
+                  
+                  exit 1
+                }
+                
+                bosh int "${local_bosh_dir}/creds.yml" --path /director_ssl/ca > "${local_bosh_dir}/ca.crt"
+                
+                cat <<EOF > "${local_bosh_dir}/env"
+                export BOSH_ENVIRONMENT="${BOSH_DIRECTOR_IP}"
+                export BOSH_CLIENT=admin
+                export BOSH_CLIENT_SECRET=`bosh int "${local_bosh_dir}/creds.yml" --path /admin_password`
+                export BOSH_CA_CERT="${local_bosh_dir}/ca.crt"
+                EOF
+                
+                source "${local_bosh_dir}/env"
+                bosh -n update-cloud-config warden/cloud-config.yml
+                ip route add 10.244.0.0/15 via ${BOSH_DIRECTOR_IP}
+                
+                # Source the environment variables
+                source /tmp/local-bosh/director/env
+                
+                echo "=== BOSH Director Environment ==="
+                echo "BOSH_ENVIRONMENT: ${BOSH_ENVIRONMENT}"
+                echo "BOSH_CLIENT: ${BOSH_CLIENT}"
+                
+                echo "=== Verifying BOSH Director ==="
+                bosh env
+                
+                echo "=== Cloud Config ==="
+                bosh cloud-config
+                
+                echo "=== Creating and Uploading Zookeeper Release ==="
+                cd /workspace/zookeeper-release
+                bosh create-release --force --timestamp-version
+                bosh upload-release
+                cd /
+                
+                echo "=== Uploading Stemcell ==="
+                bosh upload-stemcell --sha1 8fbcaa623769ec29c39f4c8679337a8c95e8e4a8 \
+                  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.632
+                
+                echo "=== Creating ops-file for single instance ==="
+                cat > /tmp/single-instance.yml <<'OPSFILE'
+                ---
+                - type: replace
+                  path: /instance_groups/name=zookeeper/instances
+                  value: 1
+                
+                - type: replace
+                  path: /instance_groups/name=zookeeper/azs
+                  value: [z1]
+                
+                - type: remove
+                  path: /instance_groups/name=smoke-tests
+                
+                - type: replace
+                  path: /stemcells/alias=default/os
+                  value: ubuntu-jammy
+                OPSFILE
+                
+                echo "=== Deploying Zookeeper (Single Instance) ==="
+                bosh -n deploy \
+                  -d zookeeper \
+                  /workspace/zookeeper-release/manifests/zookeeper.yml \
+                  -o /tmp/single-instance.yml
+                
+                echo "=== Deployment Status ==="
+                bosh -d zookeeper instances
+                
+                echo "=== Zookeeper VMs ==="
+                bosh -d zookeeper vms
+                
+                echo "=== Testing Zookeeper ==="
+                bosh -d zookeeper ssh zookeeper/0 -c "
+                  set -e
+                  echo '=== Zookeeper Process Status ==='
+                  sudo /var/vcap/bosh/bin/monit summary
+                  
+                  echo '=== Zookeeper Server Status ==='
+                  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'
+                "
+                
+                echo "=== Cleaning Up ==="
+                bosh -d zookeeper -n delete-deployment
+                
+                echo "=== Pipeline Complete - Warden CPI with Containerd SUCCESS ==="
+

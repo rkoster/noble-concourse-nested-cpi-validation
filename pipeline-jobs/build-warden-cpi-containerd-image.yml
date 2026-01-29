@@ -1,0 +1,72 @@
+  - name: build-warden-cpi-containerd-image
+    plan:
+      - in_parallel:
+          - get: warden-cpi-repo
+            trigger: false
+          - get: bosh-deployment-repo
+            trigger: false
+          - get: oci-build-task
+
+      - task: prepare-build-context
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: ubuntu
+              tag: latest
+          inputs:
+            - name: warden-cpi-repo
+            - name: bosh-deployment-repo
+          outputs:
+            - name: build-context
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -eu
+                echo "=== Preparing build context ==="
+                
+                # Copy warden-cpi-containerd directory contents
+                cp -r warden-cpi-repo/warden-cpi-containerd/* build-context/
+                
+                # Copy bosh-deployment into build context
+                cp -r bosh-deployment-repo build-context/bosh-deployment
+                
+                echo "=== Build context prepared ==="
+                ls -la build-context/
+                ls -la build-context/bosh-deployment/ | head -20
+
+      - task: build-image
+        privileged: true
+        image: oci-build-task
+        timeout: 30m
+        config:
+          platform: linux
+          inputs:
+            - name: build-context
+          outputs:
+            - name: image
+          params:
+            CONTEXT: build-context
+            BUILD_ARG_BASE_IMAGE: "ubuntu:noble"
+            BUILDKIT_PROGRESS: plain
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                echo "=== Building warden-cpi-containerd image ==="
+                # Mount cgroup2 to enable oci-build-task cgroup v2 detection
+                # Guardian/gdn mounts a tmpfs at /sys/fs/cgroup but doesn't expose cgroup v2
+                # This allows the setup-cgroups script to detect cgroup v2 and skip v1 setup
+                mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
+                exec build
+
+      - put: warden-cpi-containerd-image
+        params:
+          image: image/image.tar
+        get_params:
+          skip_download: true
+
