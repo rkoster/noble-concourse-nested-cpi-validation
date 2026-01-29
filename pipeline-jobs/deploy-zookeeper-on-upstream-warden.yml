@@ -40,7 +40,7 @@
                 stemcell_formats:
                 - warden-light
                 cloud_properties:
-                  image_reference: "((docker_registry_host))/ubuntu-noble-stemcell-patched:latest"
+                  image_reference: "10.246.0.21:5000/ubuntu-noble-stemcell-patched@sha256:7a855a426c98e327306174f60c362c2180b787f79baabc3a593796015190012f"
                 STEMCELL_MF
                 
                 # Create empty image file (required by BOSH stemcell format)
@@ -71,10 +71,44 @@
                 echo "=== Setting up cgroup v2 ==="
                 mkdir -p /sys/fs/cgroup
                 mount -t cgroup2 none /sys/fs/cgroup || echo "cgroup2 already mounted"
+
+                # Create light stemcell tarball BEFORE starting BOSH
+                echo "=== Creating Light Stemcell Tarball ==="
+                cd light-stemcell
+                tar -czf /tmp/light-stemcell.tgz stemcell.MF image
+                cd ..
+                echo "Light stemcell tarball created at /tmp/light-stemcell.tgz"
                 
-                # Use upstream start-bosh script
+                echo "=== Patching warden cpi ops-file for light stemcell ==="
+                cat > /tmp/light-stemcell-cpi-patch.yml <<'CPIPATCH'
+                # Remove sha1 check for light stemcells (no physical file to hash)
+                - type: remove
+                  path: /resource_pools/name=vms/stemcell/sha1
+                
+                # Replace stemcell URL with our light stemcell
+                - type: replace
+                  path: /resource_pools/name=vms/stemcell/url
+                  value: file:///tmp/light-stemcell.tgz
+                CPIPATCH
+                
+                cat /tmp/light-stemcell-cpi-patch.yml >> /usr/local/bosh-deployment/warden/cpi.yml
+                
+                echo "=== Patched warden/cpi.yml ==="
+                tail -15 /usr/local/bosh-deployment/warden/cpi.yml
+                
+                # Add insecure registry configuration for Garden
+                echo "=== Configuring Garden for Insecure Docker Registry ==="
+                cat > /tmp/garden-insecure-registry.yml <<'GARDENOPS'
+                # Configure Garden to allow insecure docker registries
+                - type: replace
+                  path: /instance_groups/name=bosh/jobs/name=garden/properties/garden/insecure_docker_registries?
+                  value:
+                    - "10.246.0.21:5000"
+                GARDENOPS
+                
+                # Use upstream start-bosh script with additional ops file
                 echo "=== Starting BOSH Director ==="
-                /usr/local/bin/start-bosh
+                /usr/local/bin/start-bosh -o /tmp/garden-insecure-registry.yml
                 
                 # Source BOSH environment
                 source /tmp/local-bosh/director/env
@@ -82,11 +116,8 @@
                 echo "=== BOSH Environment ==="
                 bosh env
                 
-                # Create light stemcell tarball and upload
-                echo "=== Uploading Light Stemcell ==="
-                cd light-stemcell
-                tar -czf /tmp/light-stemcell.tgz stemcell.MF image
-                cd ..
+                # Upload light stemcell for zookeeper deployment
+                echo "=== Uploading Light Stemcell to Director ==="
                 bosh upload-stemcell /tmp/light-stemcell.tgz
                 
                 # Upload zookeeper release
@@ -130,4 +161,3 @@
                 
                 echo "=== SUCCESS: Upstream Warden CPI with Light Stemcell ==="
 
-  #! Build a patched Ubuntu Noble stemcell image that removes a problematic nftables line

@@ -1,0 +1,110 @@
+#@ load("@ytt:data", "data")
+#@ load("@ytt:base64", "base64")
+
+#@ start_bosh_b64 = base64.encode(data.values.start_bosh_script)
+#@ warden_start_bosh_b64 = base64.encode(data.values.warden_start_bosh_script)
+
+---
+resources:
+  - name: bosh-docker-cpi-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: bosh/docker-cpi
+
+  - name: warden-cpi-repo
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/rkoster/noble-concourse-nested-cpi-validation.git
+      branch: main
+
+  - name: bosh-deployment-repo
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/cloudfoundry/bosh-deployment.git
+      branch: master
+
+  - name: zookeeper-release
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/cppforlife/zookeeper-release
+      branch: master
+
+  - name: oci-build-task
+    type: registry-image
+    icon: docker
+    source:
+      repository: concourse/oci-build-task
+      tag: "0.14.8"
+
+  - name: warden-cpi-containerd-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/warden-cpi-containerd
+      tag: latest
+      username: admin
+      password: ((docker_registry_password))
+      insecure: true
+
+  - name: warden-cpi-runc-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/warden-cpi-runc
+      tag: latest
+      username: admin
+      password: ((docker_registry_password))
+      insecure: true
+
+  - name: upstream-warden-cpi-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/upstream-warden-cpi
+      tag: latest
+      username: admin
+      password: ((docker_registry_password))
+      insecure: true
+
+  - name: bosh-repo
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/rkoster/bosh.git
+      branch: noble-cut-over
+      paths:
+        - ci/dockerfiles/warden-cpi
+        - ci/dockerfiles/integration
+        - src/.ruby-version
+
+  - name: ubuntu-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ubuntu
+      tag: noble
+
+  - name: integration-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/integration
+      tag: latest
+      username: admin
+      password: ((docker_registry_password))
+      insecure: true
+
+  - name: noble-patched-stemcell-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/ubuntu-noble-stemcell-patched
+      tag: latest
+      username: admin
+      password: ((docker_registry_password))
+      insecure: true
+

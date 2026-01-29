@@ -1,0 +1,6 @@
+#@data/values-schema
+---
+#@schema/nullable
+start_bosh_script: ""
+#@schema/nullable
+warden_start_bosh_script: ""

@@ -41,6 +41,12 @@
                 # Copy bosh-deployment
                 cp -r bosh-deployment-repo build-context/bosh-deployment
                 
+                # Patch Dockerfile to create /var/vcap/bosh directory
+                # This is required for warden-cpi metadata persistence
+                echo "" >> build-context/Dockerfile
+                echo "# Create warden-cpi metadata directory" >> build-context/Dockerfile
+                echo "RUN mkdir -p /var/vcap/bosh" >> build-context/Dockerfile
+                
                 echo "=== Build context (pure upstream noble-cut-over) ==="
                 ls -la build-context/
                 echo "=== Dockerfile ==="

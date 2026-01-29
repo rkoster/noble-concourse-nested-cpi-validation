@@ -1,0 +1,61 @@
+  - name: build-noble-patched-stemcell-image
+    plan:
+      - in_parallel:
+          - get: oci-build-task
+            trigger: false
+      - task: prepare-inline-dockerfile
+        image: oci-build-task
+        config:
+          platform: linux
+          outputs:
+            - name: build-context
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                set -eu
+                echo "=== Preparing inline Dockerfile to patch stemcell ==="
+                mkdir -p build-context
+                cat > build-context/Dockerfile <<'DOCKERFILE'
+                FROM ghcr.io/cloudfoundry/ubuntu-noble-stemcell:1.199
+
+                # Remove the specific nftables line (line 9) from /etc/nftables/monit.nft
+                RUN if [ -f /etc/nftables/monit.nft ]; then \
+                  sed -i '9d' /etc/nftables/monit.nft || true; \
+                  fi
+
+                # Ensure file permissions remain correct
+                RUN if [ -f /etc/nftables/monit.nft ]; then chmod 644 /etc/nftables/monit.nft || true; fi
+
+                LABEL maintainer="noble-concourse"
+                DOCKERFILE
+                echo "Dockerfile created"
+                ls -la build-context
+      - task: build-image
+        privileged: true
+        image: oci-build-task
+        timeout: 30m
+        config:
+          platform: linux
+          inputs:
+            - name: build-context
+          outputs:
+            - name: image
+          params:
+            CONTEXT: build-context
+            BUILDKIT_PROGRESS: plain
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                echo "=== Building patched noble stemcell image ==="
+                mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
+                exec build
+      - put: noble-patched-stemcell-image
+        params:
+          image: image/image.tar
+        get_params:
+          skip_download: true
+
