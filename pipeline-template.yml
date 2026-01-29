@@ -949,7 +949,7 @@ jobs:
                 stemcell_formats:
                 - warden-light
                 cloud_properties:
-                  image_reference: "((docker_registry_host))/ubuntu-noble-stemcell-patched:latest"
+                  image_reference: "10.246.0.21:5000/ubuntu-noble-stemcell-patched@sha256:7a855a426c98e327306174f60c362c2180b787f79baabc3a593796015190012f"
                 STEMCELL_MF
                 
                 # Create empty image file (required by BOSH stemcell format)
