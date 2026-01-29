@@ -1,0 +1,11 @@
+# Use the patched Noble stemcell as a light stemcell for warden-cpi
+# Light stemcells reference Docker images directly instead of importing full stemcells
+# This enables fast iteration on stemcell changes by using Dockerfiles to patch existing stemcells
+
+- type: replace
+  path: /stemcells
+  value:
+    - alias: default
+      os: ubuntu-noble
+      version: light
+      cid: light://((docker_registry_host))/ubuntu-noble-stemcell-patched:latest

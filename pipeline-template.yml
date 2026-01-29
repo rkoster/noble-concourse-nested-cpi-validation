@@ -664,7 +664,48 @@ jobs:
           - get: warden-cpi-runc-image
             trigger: true
             passed: [build-warden-cpi-runc-image]
+          - get: noble-patched-stemcell-image
+            trigger: true
+            passed: [build-noble-patched-stemcell-image]
           - get: zookeeper-release
+      - task: create-light-stemcell
+        image: oci-build-task
+        config:
+          platform: linux
+          outputs:
+            - name: light-stemcell
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                echo "=== Creating Light Stemcell Metadata ==="
+                
+                IMAGE_URL="((docker_registry_host))/ubuntu-noble-stemcell-patched:latest"
+                OUTPUT_DIR="light-stemcell"
+                
+                mkdir -p "$OUTPUT_DIR"
+                
+                # Create stemcell metadata in BOSH standard format
+                cat > "$OUTPUT_DIR/stemcell.MF" <<'STEMCELL_MF'
+                ---
+                name: bosh-warden-ubuntu-noble
+                version: "light"
+                api_version: 3
+                bosh_protocol: '1'
+                sha1: da39a3ee5e6b4b0d3255bfef95601890afd80709
+                operating_system: ubuntu-noble
+                stemcell_formats:
+                - warden-light
+                cloud_properties:
+                  image_reference: "((docker_registry_host))/ubuntu-noble-stemcell-patched:latest"
+                STEMCELL_MF
+                
+                # Create empty image file (required by BOSH stemcell format)
+                touch "$OUTPUT_DIR/image"
+                
+                echo "Stemcell metadata:"
+                cat "$OUTPUT_DIR/stemcell.MF"
       - task: deploy-with-warden-cpi
         privileged: true
         image: warden-cpi-runc-image
@@ -672,11 +713,12 @@ jobs:
           platform: linux
           inputs:
             - name: zookeeper-release
+            - name: light-stemcell
           run:
             path: bash
             args:
               - -c
-              - #@ "set -euo pipefail\n\necho \"=== Starting Warden CPI Runc Test with GrootFS ===\"\necho \"Runtime: Garden with runc runtime\"\necho \"Image Plugin: GrootFS (enabled)\"\necho \"Base OS: Ubuntu Noble 24.04\"\n\n# Mount cgroup filesystem for Garden\necho \"=== Setting up cgroup v2 ===\"\nmkdir -p /sys/fs/cgroup\nmount -t cgroup2 none /sys/fs/cgroup || echo \"cgroup2 already mounted\"\n\n# Patch start-bosh script with latest version\necho \"=== Patching start-bosh script ===\"\nbase64 -d > /usr/local/bin/start-bosh <<'BASE64SCRIPT'\n" + warden_start_bosh_b64 + "\nBASE64SCRIPT\nchmod +x /usr/local/bin/start-bosh\n\n# Start BOSH director with warden-cpi (this also starts Garden)\necho \"=== Starting BOSH Director ===\"\n/usr/local/bin/start-bosh\n\n# Source BOSH environment created by start-bosh\nsource /tmp/local-bosh/director/env\n\necho \"=== BOSH Environment ===\"\nbosh env\n\n# Upload stemcell\necho \"=== Uploading Warden Stemcell ===\"\nbosh upload-stemcell --sha1 86662513fbbb9200aca8f0c24fa69e822f49e18c \\\n  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent?v=1.631\n\n# Upload zookeeper release\necho \"=== Uploading Zookeeper Release ===\"\ncd zookeeper-release\nbosh create-release --force --timestamp-version\nbosh upload-release\ncd ..\n\n# Deploy zookeeper\necho \"=== Deploying Zookeeper ===\"\ncat > /tmp/single-instance.yml <<'OPSFILE'\n---\n- type: replace\n  path: /instance_groups/name=zookeeper/instances\n  value: 1\n- type: replace\n  path: /instance_groups/name=zookeeper/azs\n  value: [z1]\n- type: remove\n  path: /instance_groups/name=smoke-tests\n- type: replace\n  path: /stemcells/alias=default/os\n  value: ubuntu-jammy\nOPSFILE\n\nbosh -n deploy \\\n  -d zookeeper \\\n  zookeeper-release/manifests/zookeeper.yml \\\n  -o /tmp/single-instance.yml\n\necho \"=== Zookeeper Deployment Status ===\"\nbosh -d zookeeper instances --details\nbosh -d zookeeper vms --vitals\n\n# Test zookeeper\necho \"=== Testing Zookeeper ===\"\nbosh -d zookeeper ssh zookeeper/0 -c \"\n  set -e\n  echo 'Testing Zookeeper connectivity'\n  echo '=== Zookeeper Server Status ==='\n  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'\n\"\n\necho \"=== Cleaning Up ===\"\nbosh -d zookeeper -n delete-deployment\n\necho \"=== Pipeline Complete - Warden CPI with runc SUCCESS ===\"\n"
+              - #@ "set -euo pipefail\n\necho \"=== Starting Warden CPI Runc Test with GrootFS ===\"\necho \"Runtime: Garden with runc runtime\"\necho \"Image Plugin: GrootFS (enabled)\"\necho \"Base OS: Ubuntu Noble 24.04 (Light Stemcell)\"\n\n# Mount cgroup filesystem for Garden\necho \"=== Setting up cgroup v2 ===\"\nmkdir -p /sys/fs/cgroup\nmount -t cgroup2 none /sys/fs/cgroup || echo \"cgroup2 already mounted\"\n\n# Patch start-bosh script with latest version\necho \"=== Patching start-bosh script ===\"\nbase64 -d > /usr/local/bin/start-bosh <<'BASE64SCRIPT'\n" + warden_start_bosh_b64 + "\nBASE64SCRIPT\nchmod +x /usr/local/bin/start-bosh\n\n# Start BOSH director with warden-cpi (this also starts Garden)\necho \"=== Starting BOSH Director ===\"\n/usr/local/bin/start-bosh\n\n# Source BOSH environment created by start-bosh\nsource /tmp/local-bosh/director/env\n\necho \"=== BOSH Environment ===\"\nbosh env\n\n# Create light stemcell tarball and upload\necho \"=== Uploading Light Stemcell ===\"\ncd light-stemcell\ntar -czf /tmp/light-stemcell.tgz stemcell.MF image\ncd ..\nbosh upload-stemcell /tmp/light-stemcell.tgz\n\n# Upload zookeeper release\necho \"=== Uploading Zookeeper Release ===\"\ncd zookeeper-release\nbosh create-release --force --timestamp-version\nbosh upload-release\ncd ..\n\n# Deploy zookeeper using light stemcell\necho \"=== Deploying Zookeeper with Light Stemcell ===\"\ncat > /tmp/light-stemcell-ops.yml <<'OPSFILE'\n---\n- type: replace\n  path: /instance_groups/name=zookeeper/instances\n  value: 1\n- type: replace\n  path: /instance_groups/name=zookeeper/azs\n  value: [z1]\n- type: remove\n  path: /instance_groups/name=smoke-tests\n- type: replace\n  path: /stemcells\n  value:\n    - alias: default\n      os: ubuntu-noble\n      version: light\nOPSFILE\n\nbosh -n deploy \\\n  -d zookeeper \\\n  zookeeper-release/manifests/zookeeper.yml \\\n  -o /tmp/light-stemcell-ops.yml\n\necho \"=== Zookeeper Deployment Status ===\"\nbosh -d zookeeper instances --details\nbosh -d zookeeper vms --vitals\n\n# Test zookeeper\necho \"=== Testing Zookeeper ===\"\nbosh -d zookeeper ssh zookeeper/0 -c \"\n  set -e\n  echo 'Testing Zookeeper connectivity'\n  echo '=== Zookeeper Server Status ==='\n  echo stat | nc localhost 2181 || echo 'Could not connect to Zookeeper'\n\"\n\necho \"=== Cleaning Up ===\"\nbosh -d zookeeper -n delete-deployment\n\necho \"=== Pipeline Complete - Warden CPI with Light Stemcell SUCCESS ===\"\n"
 
   #! Upstream warden-cpi image build job - uses pure upstream Dockerfile from noble-cut-over
   - name: build-upstream-warden-cpi-image
