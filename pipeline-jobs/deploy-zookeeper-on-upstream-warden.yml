@@ -96,17 +96,56 @@
                 echo "=== Patched warden/cpi.yml ==="
                 tail -15 /usr/local/bosh-deployment/warden/cpi.yml
                 
-                # Add insecure registry configuration for Garden
-                echo "=== Configuring Garden for Insecure Docker Registry ==="
+                # Modify grootfs config BEFORE starting BOSH
+                # The grootfs_config.yml files were created at Docker image build time
+                # but need the insecure registry added for our local registry
+                echo "=== Configuring grootfs for insecure registry ==="
+                
+                # Modify both unprivileged and privileged grootfs configs
+                for GROOTFS_CONFIG in \
+                  "/var/vcap/jobs/garden/config/grootfs_config.yml" \
+                  "/var/vcap/jobs/garden/config/privileged_grootfs_config.yml"
+                do
+                  if [ ! -f "$GROOTFS_CONFIG" ]; then
+                    echo "ERROR: grootfs config not found at $GROOTFS_CONFIG"
+                    echo "This file should exist in the upstream-warden-cpi Docker image"
+                    exit 1
+                  fi
+                  
+                  echo "Backing up original config: $GROOTFS_CONFIG"
+                  cp "$GROOTFS_CONFIG" "${GROOTFS_CONFIG}.bak"
+                  
+                  echo "Modifying $GROOTFS_CONFIG to add insecure registry..."
+                  ruby <<RUBY_SCRIPT
+                require 'yaml'
+                
+                config_path = '${GROOTFS_CONFIG}'
+                config = YAML.load_file(config_path)
+                
+                # Add insecure registry to create section
+                config['create'] ||= {}
+                config['create']['insecure_registries'] = ['10.246.0.21:5000']
+                
+                File.write(config_path, YAML.dump(config))
+                puts "Updated #{config_path} with insecure registry: 10.246.0.21:5000"
+                RUBY_SCRIPT
+                  
+                  echo "=== Updated $GROOTFS_CONFIG ==="
+                  cat "$GROOTFS_CONFIG"
+                  echo ""
+                done
+                
+                # Add insecure registry configuration via BOSH ops-file (defense-in-depth)
+                echo "=== Creating Garden ops-file for insecure registry ==="
                 cat > /tmp/garden-insecure-registry.yml <<'GARDENOPS'
                 # Configure Garden to allow insecure docker registries
                 - type: replace
-                  path: /instance_groups/name=bosh/jobs/name=garden/properties/garden/insecure_docker_registries?
+                  path: /instance_groups/name=bosh/jobs/name=garden/properties/garden/insecure_docker_registry_list?
                   value:
                     - "10.246.0.21:5000"
                 GARDENOPS
                 
-                # Use upstream start-bosh script with additional ops file
+                # Start BOSH Director using upstream start-bosh script
                 echo "=== Starting BOSH Director ==="
                 /usr/local/bin/start-bosh -o /tmp/garden-insecure-registry.yml
                 
