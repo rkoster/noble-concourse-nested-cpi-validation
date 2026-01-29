@@ -49,6 +49,54 @@
         }
       }
     },
+    "fly@latest": {
+      "last_modified": "2026-01-26T09:54:05Z",
+      "resolved": "github:NixOS/nixpkgs/5b265bda51b42a2a85af0a543c3e57b778b01b7d#fly",
+      "source": "devbox-search",
+      "version": "8.0.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/xz65afvsibv461kq8ldq0xxmg495jb8n-fly-8.0.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/xz65afvsibv461kq8ldq0xxmg495jb8n-fly-8.0.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/g0f2p0cfxx0alah7kmx902q9qk0vwjjm-fly-8.0.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/g0f2p0cfxx0alah7kmx902q9qk0vwjjm-fly-8.0.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/bkigh1xyagpy56r1rhx0vqkz2586ipz5-fly-8.0.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/bkigh1xyagpy56r1rhx0vqkz2586ipz5-fly-8.0.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/s386n7vwvrci2ph9vj4wb3d6h027i3ql-fly-8.0.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/s386n7vwvrci2ph9vj4wb3d6h027i3ql-fly-8.0.0"
+        }
+      }
+    },
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
       "last_modified": "2026-01-13T11:13:53Z",
       "resolved": "github:NixOS/nixpkgs/61db79b0c6b838d9894923920b612048e1201926?lastModified=1768302833&narHash=sha256-h5bRFy9bco%2B8QcK7rGoOiqMxMbmn21moTACofNLRMP4%3D"

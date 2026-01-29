@@ -4,7 +4,8 @@
     "go@latest",
     "bosh-cli@latest",
     "vendir@latest",
-    "ytt@latest"
+    "ytt@latest",
+    "fly@latest"
   ],
   "shell": {
     "init_hook": [
