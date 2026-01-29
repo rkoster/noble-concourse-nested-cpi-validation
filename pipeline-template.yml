@@ -667,6 +667,7 @@ jobs:
           - get: noble-patched-stemcell-image
             trigger: true
             passed: [build-noble-patched-stemcell-image]
+          - get: oci-build-task
           - get: zookeeper-release
       - task: create-light-stemcell
         image: oci-build-task
@@ -812,6 +813,7 @@ jobs:
           - get: noble-patched-stemcell-image
             trigger: true
             passed: [build-noble-patched-stemcell-image]
+          - get: oci-build-task
           - get: zookeeper-release
       - task: create-light-stemcell
         image: oci-build-task
