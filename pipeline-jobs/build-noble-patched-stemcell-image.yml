@@ -24,6 +24,76 @@
                 # Copy agent source to build context
                 cp -r bosh-agent-fork build-context/bosh-agent-fork
 
+                # Create base firewall rules file
+                # This blocks outbound access to monit API and NATS by default
+                # The agent will add exceptions for allowed cgroups at runtime
+                cat > build-context/base-firewall.nft <<'NFTABLES'
+                #!/usr/sbin/nft -f
+                #
+                # BOSH Base Firewall Rules
+                #
+                # This file sets up the base nftables rules that block access to sensitive
+                # BOSH services by default. The bosh-agent will dynamically add rules to
+                # allow specific cgroups (agent, monit) to access these services.
+                #
+                # Protected ports (outbound only):
+                # - 2822: monit HTTP API (localhost only, internal service)
+                # - 4222: NATS messaging (outbound to director)
+                #
+                # NOT blocked:
+                # - Incoming traffic (needed for bosh create-env, agent API, NATS server on director)
+                #
+
+                table inet bosh_firewall {
+                  # Chain for filtering outbound connections to BOSH services
+                  chain output_filter {
+                    type filter hook output priority 0; policy accept;
+
+                    # Allow established and related connections
+                    ct state established,related accept
+
+                    # Block outbound access to monit API on localhost by default
+                    # The agent will add exceptions for its own cgroup
+                    ip daddr 127.0.0.1 tcp dport 2822 drop
+
+                    # Block outbound access to NATS port by default
+                    # The agent will add exceptions for its own cgroup when EnableNATSFirewall is true
+                    # This blocks connections to ANY destination on port 4222
+                    tcp dport 4222 drop
+                  }
+                }
+                NFTABLES
+
+                # Create systemd service file for base firewall
+                cat > build-context/bosh-base-firewall.service <<'SERVICE'
+                [Unit]
+                Description=BOSH Base Firewall Rules
+                DefaultDependencies=no
+                Before=network-pre.target
+                Wants=network-pre.target
+
+                [Service]
+                Type=oneshot
+                ExecStart=/usr/sbin/nft -f /etc/nftables/bosh-base.nft
+                ExecStop=/usr/sbin/nft delete table inet bosh_firewall
+                RemainAfterExit=yes
+
+                [Install]
+                WantedBy=multi-user.target
+                SERVICE
+
+                # Create agent config that enables NATS firewall
+                # This tells the agent to add NATS firewall rules at bootstrap
+                cat > build-context/agent.json <<'AGENTCONFIG'
+                {
+                  "Platform": {
+                    "Linux": {
+                      "EnableNATSFirewall": true
+                    }
+                  }
+                }
+                AGENTCONFIG
+
                 # Create multi-stage Dockerfile
                 cat > build-context/Dockerfile <<'DOCKERFILE'
                 # Stage 1: Build bosh-agent from source
@@ -39,15 +109,38 @@
                 COPY --from=builder /build/bosh-agent /var/vcap/bosh/bin/bosh-agent
                 RUN chmod 755 /var/vcap/bosh/bin/bosh-agent
 
-                # Remove the stemcell's monit nftables config - agent now manages firewall at runtime
-                # The agent creates nftables rules via SetupAgentRules() at bootstrap
+                # Update agent config to enable NATS firewall
+                # Merge with existing config if present, or create new one
+                COPY agent.json /tmp/agent-patch.json
+                RUN if [ -f /var/vcap/bosh/agent.json ]; then \
+                      apt-get update && apt-get install -y jq && \
+                      jq -s '.[0] * .[1]' /var/vcap/bosh/agent.json /tmp/agent-patch.json > /tmp/merged.json && \
+                      mv /tmp/merged.json /var/vcap/bosh/agent.json && \
+                      apt-get remove -y jq && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*; \
+                    else \
+                      cp /tmp/agent-patch.json /var/vcap/bosh/agent.json; \
+                    fi && \
+                    rm /tmp/agent-patch.json && \
+                    chmod 600 /var/vcap/bosh/agent.json
+
+                # Remove the stemcell's old monit nftables config
                 RUN rm -f /etc/nftables/monit.nft /etc/nftables.d/monit.nft 2>/dev/null || true
 
                 # Remove any nftables loading from monit.service if present
                 RUN sed -i '/nft.*monit/d' /lib/systemd/system/monit.service 2>/dev/null || true
 
+                # Install base firewall rules that block monit and NATS access by default
+                # The agent's SetupAgentRules() will add exceptions at runtime
+                RUN mkdir -p /etc/nftables
+                COPY base-firewall.nft /etc/nftables/bosh-base.nft
+                RUN chmod 644 /etc/nftables/bosh-base.nft
+
+                # Install systemd service to load base firewall at boot
+                COPY bosh-base-firewall.service /lib/systemd/system/bosh-base-firewall.service
+                RUN systemctl enable bosh-base-firewall.service
+
                 LABEL maintainer="noble-concourse-testing"
-                LABEL description="Noble stemcell with agent-managed nftables firewall"
+                LABEL description="Noble stemcell with agent-managed nftables firewall (NATS firewall enabled)"
                 DOCKERFILE
 
                 echo "=== Build context prepared ==="
