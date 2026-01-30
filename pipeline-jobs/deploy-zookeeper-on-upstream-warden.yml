@@ -2,9 +2,9 @@
     plan:
 
       - in_parallel:
-          - get: upstream-warden-cpi-image
+          - get: patched-warden-cpi-image
             trigger: true
-            passed: [build-upstream-warden-cpi-image]
+            passed: [build-patched-warden-cpi-image]
           - get: noble-patched-stemcell-image
             trigger: true
             passed: [build-noble-patched-stemcell-image]
@@ -50,7 +50,7 @@
                 cat "$OUTPUT_DIR/stemcell.MF"
       - task: deploy-with-upstream-warden-cpi
         privileged: true
-        image: upstream-warden-cpi-image
+        image: patched-warden-cpi-image
         config:
           platform: linux
           inputs:
@@ -147,7 +147,45 @@
                 
                 # Start BOSH Director using upstream start-bosh script
                 echo "=== Starting BOSH Director ==="
-                /usr/local/bin/start-bosh -o /tmp/garden-insecure-registry.yml
+                /usr/local/bin/start-bosh -o /tmp/garden-insecure-registry.yml || {
+                  echo "=== start-bosh FAILED - collecting debug info ==="
+                  
+                  # Check garden containers
+                  echo "=== Garden Containers ==="
+                  /var/vcap/packages/guardian/bin/gaol list || true
+                  
+                  # Get container handle if any
+                  CONTAINER=$(/var/vcap/packages/guardian/bin/gaol list | head -1 || true)
+                  if [ -n "$CONTAINER" ]; then
+                    echo "=== Logs from container: $CONTAINER ==="
+                    
+                    # Try to get agent logs
+                    echo "=== Agent logs ==="
+                    /var/vcap/packages/guardian/bin/gaol run "$CONTAINER" -- cat /var/vcap/bosh/log/current 2>/dev/null || echo "No agent logs"
+                    
+                    # Try to get monit status
+                    echo "=== Monit status ==="
+                    /var/vcap/packages/guardian/bin/gaol run "$CONTAINER" -- /var/vcap/bosh/bin/monit summary 2>/dev/null || echo "No monit"
+                    
+                    # Try to get systemd status
+                    echo "=== Systemd status ==="
+                    /var/vcap/packages/guardian/bin/gaol run "$CONTAINER" -- systemctl status 2>/dev/null || echo "No systemctl"
+                    
+                    # Check if agent-env file exists
+                    echo "=== Agent env file ==="
+                    /var/vcap/packages/guardian/bin/gaol run "$CONTAINER" -- cat /var/vcap/bosh/warden-cpi-agent-env.json 2>/dev/null || echo "No agent-env"
+                    
+                    # Check process list
+                    echo "=== Processes ==="
+                    /var/vcap/packages/guardian/bin/gaol run "$CONTAINER" -- ps auxf 2>/dev/null || echo "ps failed"
+                  fi
+                  
+                  # Garden logs
+                  echo "=== Garden logs ==="
+                  tail -100 /var/vcap/sys/log/garden/*.log 2>/dev/null || true
+                  
+                  exit 1
+                }
                 
                 # Source BOSH environment
                 source /tmp/local-bosh/director/env

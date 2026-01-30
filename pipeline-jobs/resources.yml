@@ -70,6 +70,16 @@ resources:
       password: ((docker_registry_password))
       insecure: true
 
+  - name: patched-warden-cpi-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: ((docker_registry_host))/patched-warden-cpi
+      tag: latest
+      username: admin
+      password: ((docker_registry_password))
+      insecure: true
+
   - name: bosh-repo
     type: git
     icon: github
@@ -107,4 +117,18 @@ resources:
       username: admin
       password: ((docker_registry_password))
       insecure: true
+
+  - name: bosh-warden-cpi-release
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/rkoster/bosh-warden-cpi-release.git
+      branch: fix-overlayfs-race-condition
+
+  - name: garden-runc-release
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/rkoster/garden-runc-release.git
+      branch: noble-nested-warden
 

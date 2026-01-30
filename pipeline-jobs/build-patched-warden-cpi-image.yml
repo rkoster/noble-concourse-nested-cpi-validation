@@ -1,0 +1,147 @@
+  - name: build-patched-warden-cpi-image
+    plan:
+      - in_parallel:
+          - get: upstream-warden-cpi-image
+            trigger: true
+            passed: [build-upstream-warden-cpi-image]
+            params:
+              format: oci
+          - get: bosh-warden-cpi-release
+            trigger: true
+          - get: garden-runc-release
+            trigger: true
+          - get: oci-build-task
+      - in_parallel:
+          - task: create-warden-cpi-dev-release
+            config:
+              platform: linux
+              image_resource:
+                type: registry-image
+                source:
+                  repository: bosh/integration
+              inputs:
+                - name: bosh-warden-cpi-release
+              outputs:
+                - name: patched-warden-cpi
+              run:
+                path: bash
+                args:
+                  - -c
+                  - |
+                    set -euo pipefail
+                    
+                    echo "=== Building Patched Warden CPI Dev Release ==="
+                    echo "Source: https://github.com/rkoster/bosh-warden-cpi-release"
+                    echo "Branch: fix-overlayfs-race-condition"
+                    
+                    cd bosh-warden-cpi-release
+                    
+                    echo "=== Verify patch is present ==="
+                    grep -A 3 "Stream directly to destination" src/bosh-warden-cpi/vm/warden_file_service.go || {
+                      echo "ERROR: Patch not found in source!"
+                      exit 1
+                    }
+                    
+                    echo "=== Creating dev release ==="
+                    bosh create-release --force --tarball=../patched-warden-cpi/warden-cpi.tgz
+                    
+                    echo "=== Dev release created ==="
+                    ls -la ../patched-warden-cpi/
+          - task: build-patched-gdn-binary
+            config:
+              platform: linux
+              image_resource:
+                type: registry-image
+                source:
+                  repository: bosh/integration
+              inputs:
+                - name: garden-runc-release
+              outputs:
+                - name: patched-gdn
+              run:
+                path: bash
+                args:
+                  - -c
+                  - |
+                    set -euo pipefail
+                    
+                    echo "=== Building Patched gdn Binary ==="
+                    echo "Source: https://github.com/rkoster/garden-runc-release"
+                    echo "Branch: noble-nested-warden"
+                    
+                    cd garden-runc-release/src/guardian
+                    
+                    echo "=== Verify guardian patch is present ==="
+                    git log -1 --oneline
+                    grep -A 2 "Loop devices" guardiancmd/server.go || {
+                      echo "ERROR: Guardian loop device patch not found!"
+                      exit 1
+                    }
+                    
+                    echo "=== Building gdn binary ==="
+                    # Build gdn with the daemon tag (required for garden)
+                    go build -tags daemon -o ../../../patched-gdn/gdn ./cmd/gdn
+                    
+                    echo "=== gdn binary built ==="
+                    ls -la ../../../patched-gdn/
+      - task: prepare-build-context
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: alpine
+          inputs:
+            - name: patched-warden-cpi
+            - name: patched-gdn
+          outputs:
+            - name: build-context
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                set -ex
+                
+                cp patched-warden-cpi/warden-cpi.tgz build-context/
+                cp patched-gdn/gdn build-context/
+                
+                cat > build-context/Dockerfile <<'EOF'
+                ARG BASE_IMAGE
+                FROM $BASE_IMAGE
+                
+                # Replace warden-cpi release with patched version (overlayfs fix)
+                COPY warden-cpi.tgz /usr/local/releases/warden-cpi.tgz
+                
+                # Replace gdn binary with patched version (loop device access fix)
+                # This overwrites the compiled guardian binary with our patched build
+                COPY gdn /var/vcap/packages/guardian/bin/gdn
+                RUN chmod +x /var/vcap/packages/guardian/bin/gdn
+                EOF
+                
+                echo "=== Build context ==="
+                ls -la build-context/
+                echo "=== Dockerfile ==="
+                cat build-context/Dockerfile
+      - task: build-image
+        privileged: true
+        image: oci-build-task
+        timeout: 15m
+        config:
+          platform: linux
+          inputs:
+            - name: build-context
+            - name: upstream-warden-cpi-image
+          outputs:
+            - name: image
+          params:
+            CONTEXT: build-context
+            IMAGE_ARG_BASE_IMAGE: upstream-warden-cpi-image/image.tar
+          run:
+            path: build
+      - put: patched-warden-cpi-image
+        params:
+          image: image/image.tar
+        get_params:
+          skip_download: true
+
