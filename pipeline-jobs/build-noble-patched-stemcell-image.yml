@@ -87,13 +87,29 @@
                 WantedBy=multi-user.target
                 SERVICE
 
-                # Create agent config that enables NATS firewall
-                # This tells the agent to add NATS firewall rules at bootstrap
+                # Create agent config for warden-cpi with NATS firewall enabled
+                # This includes all warden-specific settings (from base_warden stage)
+                # plus EnableNATSFirewall for agent-managed firewall rules
                 cat > build-context/agent.json <<'AGENTCONFIG'
                 {
                   "Platform": {
                     "Linux": {
+                      "UseDefaultTmpDir": true,
+                      "UsePreformattedPersistentDisk": true,
+                      "BindMountPersistentDisk": true,
+                      "SkipDiskSetup": true,
+                      "ServiceManager": "systemd",
                       "EnableNATSFirewall": true
+                    }
+                  },
+                  "Infrastructure": {
+                    "Settings": {
+                      "Sources": [
+                        {
+                          "Type": "File",
+                          "SettingsPath": "/var/vcap/bosh/warden-cpi-agent-env.json"
+                        }
+                      ]
                     }
                   }
                 }
@@ -114,19 +130,10 @@
                 COPY --from=builder /build/bosh-agent /var/vcap/bosh/bin/bosh-agent
                 RUN chmod 755 /var/vcap/bosh/bin/bosh-agent
 
-                # Update agent config to enable NATS firewall
-                # Merge with existing config if present, or create new one
-                COPY agent.json /tmp/agent-patch.json
-                RUN if [ -f /var/vcap/bosh/agent.json ]; then \
-                      apt-get update && apt-get install -y jq && \
-                      jq -s '.[0] * .[1]' /var/vcap/bosh/agent.json /tmp/agent-patch.json > /tmp/merged.json && \
-                      mv /tmp/merged.json /var/vcap/bosh/agent.json && \
-                      apt-get remove -y jq && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*; \
-                    else \
-                      cp /tmp/agent-patch.json /var/vcap/bosh/agent.json; \
-                    fi && \
-                    rm /tmp/agent-patch.json && \
-                    chmod 600 /var/vcap/bosh/agent.json
+                # Install complete warden+firewall agent config
+                # This replaces any existing agent.json with our complete config
+                COPY agent.json /var/vcap/bosh/agent.json
+                RUN chmod 600 /var/vcap/bosh/agent.json
 
                 # Remove the stemcell's old monit nftables config
                 RUN rm -f /etc/nftables/monit.nft /etc/nftables.d/monit.nft 2>/dev/null || true
