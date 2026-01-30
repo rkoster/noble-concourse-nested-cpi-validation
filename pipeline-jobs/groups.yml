@@ -1,0 +1,40 @@
+groups:
+  - name: upstream-warden
+    jobs:
+      - build-integration-image
+      - build-upstream-warden-cpi-image
+      - build-patched-warden-cpi-image
+      - build-noble-patched-stemcell-image
+      - deploy-zookeeper-on-upstream-warden
+
+  - name: warden-containerd
+    jobs:
+      - build-warden-cpi-containerd-image
+      - deploy-zookeeper-on-warden-containerd
+
+  - name: warden-runc
+    jobs:
+      - build-warden-cpi-runc-image
+      - deploy-zookeeper-on-warden-runc
+
+  - name: docker-bosh
+    jobs:
+      - deploy-zookeeper-on-docker-bosh
+
+  - name: bosh-agent-integration-firewall
+    jobs:
+      - test-bosh-agent-integration-firewall
+
+  - name: all
+    jobs:
+      - build-integration-image
+      - build-upstream-warden-cpi-image
+      - build-patched-warden-cpi-image
+      - build-noble-patched-stemcell-image
+      - build-warden-cpi-containerd-image
+      - build-warden-cpi-runc-image
+      - deploy-zookeeper-on-upstream-warden
+      - deploy-zookeeper-on-warden-containerd
+      - deploy-zookeeper-on-warden-runc
+      - deploy-zookeeper-on-docker-bosh
+      - test-bosh-agent-integration-firewall

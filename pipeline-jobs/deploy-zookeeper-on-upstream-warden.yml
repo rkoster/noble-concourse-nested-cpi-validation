@@ -14,6 +14,8 @@
         image: oci-build-task
         config:
           platform: linux
+          inputs:
+            - name: noble-patched-stemcell-image
           outputs:
             - name: light-stemcell
           run:
@@ -23,13 +25,25 @@
               - |
                 echo "=== Creating Light Stemcell Metadata ==="
                 
-                IMAGE_URL="((docker_registry_host))/ubuntu-noble-stemcell-patched:latest"
+                # Get the image digest from the resource metadata
+                # The registry-image resource puts the digest in the 'digest' file
+                if [ -f noble-patched-stemcell-image/digest ]; then
+                  IMAGE_DIGEST=$(cat noble-patched-stemcell-image/digest)
+                  echo "Found image digest: $IMAGE_DIGEST"
+                else
+                  echo "ERROR: No digest file found in noble-patched-stemcell-image"
+                  ls -la noble-patched-stemcell-image/
+                  exit 1
+                fi
+                
+                REGISTRY_HOST="((docker_registry_host))"
+                IMAGE_REFERENCE="${REGISTRY_HOST}/ubuntu-noble-stemcell-patched@${IMAGE_DIGEST}"
                 OUTPUT_DIR="light-stemcell"
                 
                 mkdir -p "$OUTPUT_DIR"
                 
                 # Create stemcell metadata in BOSH standard format
-                cat > "$OUTPUT_DIR/stemcell.MF" <<'STEMCELL_MF'
+                cat > "$OUTPUT_DIR/stemcell.MF" <<STEMCELL_MF
                 ---
                 name: bosh-warden-ubuntu-noble
                 version: "light"
@@ -40,7 +54,7 @@
                 stemcell_formats:
                 - warden-light
                 cloud_properties:
-                  image_reference: "10.246.0.21:5000/ubuntu-noble-stemcell-patched@sha256:7a855a426c98e327306174f60c362c2180b787f79baabc3a593796015190012f"
+                  image_reference: "${IMAGE_REFERENCE}"
                 STEMCELL_MF
                 
                 # Create empty image file (required by BOSH stemcell format)
@@ -233,8 +247,72 @@
                 bosh -d zookeeper instances --details
                 bosh -d zookeeper vms --vitals
                 
-                echo "=== Cleaning Up ==="
-                bosh -d zookeeper -n delete-deployment
+                # Verify agent-managed firewall in zookeeper container
+                echo "=== Verifying Agent-Managed Firewall ==="
+                
+                # Architecture:
+                # - Concourse task container runs Garden
+                # - Garden runs BOSH director container
+                # - BOSH director uses warden-cpi to create nested containers for VMs
+                # - Zookeeper VM is a nested Garden container managed by director's warden-cpi
+                #
+                # The zookeeper container is created by the warden-cpi, and its data
+                # is stored alongside the director container in /var/vcap/data/garden/depot
+                
+                RUNC=/var/vcap/packages/runc/bin/runc
+                DEPOT=/var/vcap/data/garden/depot
+                
+                echo "=== Finding containers ==="
+                ls -la "$DEPOT" 2>/dev/null || echo "No depot directory"
+                
+                # List all containers - should be director + zookeeper
+                CONTAINERS=$(ls -t "$DEPOT" 2>/dev/null)
+                echo "Containers found:"
+                echo "$CONTAINERS"
+                
+                # The zookeeper container should be the most recently created
+                # (created after the director during bosh deploy)
+                for CONTAINER in $CONTAINERS; do
+                  echo ""
+                  echo "=== Inspecting container: $CONTAINER ==="
+                  
+                  # Check if this looks like a zookeeper VM by looking at agent files
+                  echo "Checking for BOSH agent files..."
+                  $RUNC --root /run/runc exec "$CONTAINER" ls -la /var/vcap/bosh/ 2>/dev/null | head -10 || echo "No /var/vcap/bosh/"
+                  
+                  # Check agent.json
+                  echo "=== agent.json ==="
+                  $RUNC --root /run/runc exec "$CONTAINER" cat /var/vcap/bosh/agent.json 2>/dev/null || echo "No agent.json"
+                  
+                  # Check nftables rules
+                  echo "=== nftables rules ==="
+                  $RUNC --root /run/runc exec "$CONTAINER" nft list ruleset 2>/dev/null || echo "nft not available"
+                  
+                  # Check agent logs for firewall
+                  echo "=== Agent log (firewall entries) ==="
+                  $RUNC --root /run/runc exec "$CONTAINER" cat /var/vcap/bosh/log/current 2>/dev/null | grep -i -E "(firewall|nftables|nats)" | tail -20 || echo "No firewall entries"
+                  
+                  # Show agent log tail
+                  echo "=== Agent log tail ==="
+                  $RUNC --root /run/runc exec "$CONTAINER" tail -30 /var/vcap/bosh/log/current 2>/dev/null || echo "No agent log"
+                done
                 
                 echo "=== SUCCESS: Upstream Warden CPI with Light Stemcell ==="
+                echo ""
+                echo "=== Keeping environment alive for debugging ==="
+                echo "Hijack into this task to inspect the zookeeper container:"
+                echo "  fly -t local hijack -j nested-bosh-zookeeper/deploy-zookeeper-on-upstream-warden --step deploy-with-upstream-warden-cpi"
+                echo ""
+                echo "Useful commands inside hijacked container:"
+                echo "  source /tmp/local-bosh/director/env"
+                echo "  bosh -d zookeeper ssh zookeeper/0"
+                echo "  RUNC=/var/vcap/packages/runc/bin/runc"
+                echo '  $RUNC --root /run/runc exec <container-id> nft list ruleset'
+                echo '  $RUNC --root /run/runc exec <container-id> cat /var/vcap/bosh/log/current'
+                echo ""
+                echo "Sleeping for 1 hour... (Ctrl+C or abort job to stop)"
+                sleep 3600
+                
+                echo "=== Cleaning Up ==="
+                bosh -d zookeeper -n delete-deployment || true
 

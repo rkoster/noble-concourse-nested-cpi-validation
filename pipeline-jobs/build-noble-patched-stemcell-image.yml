@@ -53,6 +53,11 @@
                 # NOT blocked:
                 # - Incoming traffic (needed for bosh create-env, agent API, etc.)
                 #
+                # Cross-table coordination:
+                # The agent runs in a separate table (bosh_agent) with higher priority.
+                # When it allows a packet, it sets mark 0xb054 ("BOSH" leet-ified).
+                # This table checks for that mark and skips the DROP for marked packets.
+                #
 
                 table inet bosh_firewall {
                   # Chain for filtering outbound connections to monit
@@ -61,6 +66,10 @@
 
                     # Allow established and related connections
                     ct state established,related accept
+
+                    # Skip DROP if packet was marked as allowed by the agent
+                    # The agent sets mark 0xb054 (45140 decimal) for packets it allows
+                    meta mark 0xb054 accept
 
                     # Block outbound access to monit API on localhost by default
                     # The agent will add exceptions for its own cgroup

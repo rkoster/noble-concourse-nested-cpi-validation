@@ -1,0 +1,311 @@
+  - name: test-bosh-agent-integration-firewall
+    serial: true
+    plan:
+      - in_parallel:
+          - get: bosh-agent-fork
+            trigger: true
+          - get: bosh-agent-registry-image
+
+      - task: run-integration-tests
+        image: bosh-agent-registry-image
+        privileged: true
+        config:
+          platform: linux
+          inputs:
+            - name: bosh-agent-fork
+          params:
+            BOSH_ENVIRONMENT: https://10.246.0.10:25555
+            BOSH_CLIENT: admin
+            BOSH_CLIENT_SECRET: dxbkikambgqri2vmhlpm
+            BOSH_CA_CERT: |
+              -----BEGIN CERTIFICATE-----
+              MIIEUjCCArqgAwIBAgIRAMzfh4nFn0+ahJ3fNbx1T9AwDQYJKoZIhvcNAQELBQAw
+              MjELMAkGA1UEBhMCVVMxFjAUBgNVBAoTDUNsb3VkIEZvdW5kcnkxCzAJBgNVBAMT
+              AmNhMB4XDTI2MDExNjEzMzAzNFoXDTI3MDExNjEzMzAzNFowMjELMAkGA1UEBhMC
+              VVMxFjAUBgNVBAoTDUNsb3VkIEZvdW5kcnkxCzAJBgNVBAMTAmNhMIIBojANBgkq
+              hkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0iFvMp7xi2Cnsdqs7MYsQUAmfoVC+/Wr
+              W7ljqc/c3FfMp5xEU431FrAE4o+8RWQ78dytF/DRORvcVnChaDTq+sLMue1/Lt0K
+              7ebgg30SDq5TTjCs/s1rABqxiSzTu5sofRm+BmeZtMq+SwVoUyxxJtYC//ZvmBXF
+              CNzifYHYNTmVN9j7f0A8+zkmxReDXS3r9LR+mQmRam3UshDfJDZQbaCtYVwkZYzR
+              0JDjElppeYDsV6kO46gcLN8yM5W3uGJjHSG/DoLyDlimc7WFu/yriKRBvLRFdjrl
+              pMNOJRwvxqaVcXsfXuqvNHnO7yTLj6MhZPwvzWyyH5/Biljn6g9cKnKRwKesqC2Q
+              HalQ+cv+Z9TMBFw+yXvZh1rZPBG9CgtXsUR4k2o8Gd1lWlwcq8nJ3StQQF987H/c
+              d7Rb/ZRk3NqUR6i47zDo5mevekyShcAuwlPzy4YzlevScRLPycVJ5DKUKvHEegq8
+              jGDy2bkG+6fIgqlhBhiDkIxtSoTn3h31AgMBAAGjYzBhMA4GA1UdDwEB/wQEAwIB
+              BjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQ8HiXnMv0UYdQPP0wS5VgE8vP2
+              uzAfBgNVHSMEGDAWgBQ8HiXnMv0UYdQPP0wS5VgE8vP2uzANBgkqhkiG9w0BAQsF
+              AAOCAYEAIXiBdWPJQQL02vtl5rx5aLoRnZEf7K+60QfgWXKw8zyznB+bIPOhXE5d
+              yUZZ2okYClvScah3SZNoj78zIlydSlmabRCw5sdQMut7LbRxOz2B8JoDpYnmaYrd
+              cal0Ags6VoWpymW/2LhqUGwcmM8U0gD2mdDkIG2T8RXUzEc/Masc5C1Lggr1TA9d
+              PLy8fEWrJUaZZSFOrf3ygyNU32c11vhyF8MWigKEBz5OaUhRQFHcR8lDr0x76DuI
+              vleS91R2uSV99e+ac4WIMChNRJzd4YYv/zOTmicqr0oIhqzwyKhEor/KMHD+HI61
+              W5SuVHBLYhFJ3IHaX4BzLma0wZZkLVylFpooOC1kthVQ5KvOLhB3yScKBaVzMz8f
+              01t4rVBamXI/QV5txiFEVnchzsZ9Xa78CRubW3eAvCZD5XvLG5PCLR1ihgW5HYwt
+              4vXyPvQAZ4nPlFAG8teUPIgrcpPHKSggVYhJN9X8XUNJtWOCGX2zonEtrU8pxkE0
+              TNItownM
+              -----END CERTIFICATE-----
+            BOSH_DEPLOYMENT: bosh-agent-integration-firewall
+            JUMPBOX_IP: 10.246.0.10
+            JUMPBOX_USERNAME: jumpbox
+            JUMPBOX_PRIVATE_KEY: |
+              -----BEGIN RSA PRIVATE KEY-----
+              MIIEpAIBAAKCAQEA0ei74JQ1OQu/+dQlIJ94JrYb78Yx7+EyDNNKA9+uQrewCdxq
+              QCUt+G9O5BEpQ8N8mrufL8g7CBjiFMs8U5qH9uZOc29m3ANtD2j8xlqV8yjBRooJ
+              jJwHTGC7sAtF1tDnM0bOiXbUdk78x7fbIgHvkNy1lLf/diezysOEVRVQD+0bZzUs
+              4vK3X/glC6ZkM1a2bRWbYbZ3LK0sMlPTKO06CAOD0Sy5WnsPdXOK4Sh//55k9Ffd
+              3XskqkOQSnXsaR9Cg0hgDOfOHu78EytaPDzit0+vN52lcjHJN6vHz5kqx3diuugc
+              4iqizLOP4+9QZSloiBJEFM4HArlyN7MFgz1+WQIDAQABAoIBAEHV+A9BDMxelhC6
+              bAamXZ3uoiZ7CDCPdg41utIqNtKwICOHoT+LKbbw2lKH22RojM1PKWdoKrOockhJ
+              Uht6rUhQBa0I9L7uyCb8K8Pep4dDchM4ujQCv/tBn7xgXMA6dzlK7P6KaarNrVTK
+              oo0xBD1wK/eAGjypySdAWWICNEE58FF39EjsQiTpv8Ye00yU66J3vQR9CTuh3+qE
+              twItllosJ1wRg1lE6xuRxyl5HAL9y9Z3KR+sz2WSngDi5Wc16zOQmU7/T4hzK0El
+              VRAhwM7PGIB1F7c3MpmTaepeY5WO0UKb/O0jFKrZBkY/wq64Iy1VY57tl/Nsil2O
+              yhWqys0CgYEA7yoiPtgwGmIm33IiMlEWoXuVAwiZixphmaXSFOCJ9hKZouH1I9mV
+              pr3A2dYm91ofa9rFM6NKyNNedRc+d0hINEPaZvpgvs+rY1jTfRTKFxLlpACQUuBC
+              9bPK/YMtYJElOBpl+PsakRf/YKeYYHfSYoJTqGwd2jd7lkaOEOI2aZMCgYEA4K9m
+              4CHLR9njTBo8zRKoZafK54fBBlEms1x8vhW3Q4NmWPEy7u3BspdH2UR9+NWY5IwA
+              /bYMc6wgW2icH22kbGWeAtd2DY55SokKm1B86MDsbMnOoy74rhFPWqwqp22AWYMw
+              CMNOXlOATEnTx+e5qeEFn6DAh3L/BFSQ2jhTO+MCgYEA2AgZEuc43DwYnPF9jjHM
+              3WTB/xF/kDTuQFmWYCFKvSmj+YtdYVqjYRA56QsV+4w+oa/lPXWckbbLtbyfQiPa
+              hMtdtnMnfHQdfgm4T12+BgWdxPx1YUcNdN9I1qHtFTNGiVzfC33WS4V/upDohQr2
+              0OCkLJgshvZi/iURIpMTT10CgYAu3ogAQyxrfZk7m9GJGdZE9l6OM7RhQ/ZlvepL
+              oK4NCFEGRrJQQwp/3azgNrhseuoc6tOeGSa5znMlfknrCG0fK4dtolJ++3RzxuiO
+              g5i62Nu4ydQwGDFJ5lR+XqG7MU1v3rzbZxpm9NYzk8b40W7acBVDOj5PQv7NgXKC
+              AvPh7wKBgQDuPcalYqVN65sm6kb7qy5IRWNg3fBs1gtmVts2RIXl7d3e9cWYXLXN
+              8lbwARKfm4CY+r8hBhpBbTcXHGvz4idOdhT+gERw+A/gKBbaufGOIEUKD5Pt9wA1
+              oonjHJ1TF8Nn1LrJBOmTFY8GnEUAMkootVpbLBWmgPKL90xi5TjzLg==
+              -----END RSA PRIVATE KEY-----
+            JUMPBOX_PUBLIC_KEY: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDR6LvglDU5C7/51CUgn3gmthvvxjHv4TIM00oD365Ct7AJ3GpAJS34b07kESlDw3yau58vyDsIGOIUyzxTmof25k5zb2bcA20PaPzGWpXzKMFGigmMnAdMYLuwC0XW0OczRs6JdtR2TvzHt9siAe+Q3LWUt/92J7PKw4RVFVAP7RtnNSzi8rdf+CULpmQzVrZtFZthtncsrSwyU9Mo7ToIA4PRLLlaew91c4rhKH//nmT0V93deySqQ5BKdexpH0KDSGAM584e7vwTK1o8POK3T683naVyMck3q8fPmSrHd2K66BziKqLMs4/j71BlKWiIEkQUzgcCuXI3swWDPX5Z
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -euo pipefail
+
+                echo "=== 1. Disable resurrection ==="
+                cat > /tmp/resurrection-off.yml <<'EOF'
+                rules:
+                  - enabled: false
+                    include:
+                      deployments:
+                        - bosh-agent-integration-firewall
+                EOF
+                bosh -n update-config --name=agent-firewall-resurrection \
+                  --type=resurrection /tmp/resurrection-off.yml
+
+                echo "=== 2. Upload os-conf release ==="
+                # os-conf 23.0.0 is already on the director, skip upload
+
+                echo "=== 3. Deploy test VM ==="
+                # NOTE: Using Jammy instead of Noble because the bosh-agent integration tests
+                # require runit (sv start/stop agent) which Jammy has. Noble uses systemd instead.
+                # Deploy with LXD/incus agent enabled for incus exec access (debugging fallback)
+                # See: https://github.com/a2geek/bosh-lxd-cpi-release/blob/main/manifests/enable-lxd-agent-config.yml
+                cat > /tmp/agent-deployment.yml <<EOF
+                name: bosh-agent-integration-firewall
+                releases:
+                  - name: os-conf
+                    version: latest
+                stemcells:
+                  - alias: stemcell
+                    os: ubuntu-jammy
+                    version: latest
+                instance_groups:
+                  - name: agent-test
+                    azs: [z1]
+                    instances: 1
+                    vm_type: default
+                    stemcell: stemcell
+                    networks:
+                      - name: default
+                    jobs:
+                      - name: user_add
+                        release: os-conf
+                        properties:
+                          users:
+                            # Create agent_test_user for integration tests
+                            - name: agent_test_user
+                              public_key: "${JUMPBOX_PUBLIC_KEY}"
+                      - name: pre-start-script
+                        release: os-conf
+                        properties:
+                          script: |
+                            #!/bin/bash
+                            # Install LXD/incus agent for incus exec access (debugging fallback)
+                            if [ -e /dev/virtio-ports/org.linuxcontainers.lxd ]; then
+                              mount -t 9p config /mnt || true
+                              if [ -f /mnt/install.sh ]; then
+                                cd /mnt
+                                ./install.sh
+                                cd /
+                                umount /mnt
+                                systemctl start lxd-agent || true
+                              fi
+                            fi
+                    env:
+                      bosh:
+                        ipv6:
+                          enable: true
+                update:
+                  canaries: 0
+                  canary_watch_time: 60000
+                  max_in_flight: 1
+                  update_watch_time: 60000
+                EOF
+
+                bosh -n deploy /tmp/agent-deployment.yml
+
+                echo "=== 4. Get agent info ==="
+                agent_ip=$(bosh instances --json | jq -r '.Tables[].Rows[0].ips')
+                echo "Agent IP: ${agent_ip}"
+
+                echo "=== 5. Setup SSH ==="
+                mkdir -p ~/.ssh
+
+                echo "${JUMPBOX_PRIVATE_KEY}" > ~/.ssh/jumpbox.pem
+                chmod 600 ~/.ssh/jumpbox.pem
+
+                # SSH config for jumpbox and agent
+                cat > ~/.ssh/config <<SSHCONF
+                Host ${JUMPBOX_IP}
+                  User ${JUMPBOX_USERNAME}
+                  IdentityFile ~/.ssh/jumpbox.pem
+                  StrictHostKeyChecking no
+                  UserKnownHostsFile /dev/null
+
+                Host ${agent_ip}
+                  User agent_test_user
+                  IdentityFile ~/.ssh/jumpbox.pem
+                  ProxyJump ${JUMPBOX_IP}
+                  StrictHostKeyChecking no
+                  UserKnownHostsFile /dev/null
+                SSHCONF
+
+                chmod 600 ~/.ssh/config
+
+                # Add agent_test_user to bosh_sshers and bosh_sudoers groups via bosh ssh
+                echo "Configuring agent_test_user permissions on VM..."
+                export BOSH_ALL_PROXY="ssh+socks5://${JUMPBOX_USERNAME}@${JUMPBOX_IP}:22?private-key=$HOME/.ssh/jumpbox.pem"
+                bosh ssh -c "sudo usermod -a -G bosh_sshers,bosh_sudoers agent_test_user || true"
+                unset BOSH_ALL_PROXY
+
+                # Test SSH connectivity
+                echo "Testing SSH connectivity to agent VM..."
+                ssh -F ~/.ssh/config -o ConnectTimeout=10 ${agent_ip} "echo 'SSH connection successful'" || {
+                  echo "ERROR: SSH connection failed. Debugging info:"
+                  echo "Agent IP: ${agent_ip}"
+                  echo "Checking via bosh ssh..."
+                  export BOSH_ALL_PROXY="ssh+socks5://${JUMPBOX_USERNAME}@${JUMPBOX_IP}:22?private-key=$HOME/.ssh/jumpbox.pem"
+                  bosh ssh -c "id agent_test_user; ls -la /home/agent_test_user/.ssh/; cat /home/agent_test_user/.ssh/authorized_keys"
+                  unset BOSH_ALL_PROXY
+                  exit 1
+                }
+
+                echo "=== 6. Build and install agent ==="
+                cd bosh-agent-fork
+                echo "Building agent..."
+                GOARCH=amd64 GOOS=linux bin/build
+
+                echo "Stopping agent on VM..."
+                ssh ${agent_ip} "sudo sv stop agent" || true
+
+                echo "Installing agent on VM..."
+                scp out/bosh-agent ${agent_ip}:/tmp/bosh-agent
+                ssh ${agent_ip} "sudo mv /tmp/bosh-agent /var/vcap/bosh/bin/bosh-agent && sudo chmod +x /var/vcap/bosh/bin/bosh-agent"
+
+                echo "=== 7. Configure agent for NATS firewall ==="
+                ssh ${agent_ip} "sudo sh -c '
+                  if command -v jq >/dev/null 2>&1; then
+                    cp /var/vcap/bosh/agent.json /var/vcap/bosh/agent.json.bak
+                    jq \".Platform.Linux.EnableNATSFirewall = true\" /var/vcap/bosh/agent.json.bak > /var/vcap/bosh/agent.json
+                  else
+                    # Fallback if jq not available - use sed
+                    cp /var/vcap/bosh/agent.json /var/vcap/bosh/agent.json.bak
+                    if grep -q \"EnableNATSFirewall\" /var/vcap/bosh/agent.json; then
+                      sed -i \"s/\\\"EnableNATSFirewall\\\".*false/\\\"EnableNATSFirewall\\\": true/\" /var/vcap/bosh/agent.json
+                    else
+                      # Insert into Platform.Linux section
+                      sed -i \"s/\\\"Linux\\\".*{/\\\"Linux\\\": {\\\"EnableNATSFirewall\\\": true,/\" /var/vcap/bosh/agent.json
+                    fi
+                  fi
+                '"
+
+                # Backup settings for test restoration
+                ssh ${agent_ip} "sudo sh -c 'mkdir -p /settings-backup && cp /var/vcap/bosh/*.json /settings-backup/'"
+
+                echo "=== 8. Run integration tests ==="
+                echo "Setting up test environment..."
+
+                cat > integration/ssh-config <<SSHCONF
+                Host agent_vm
+                  User agent_test_user
+                  Hostname ${agent_ip}
+                  Port 22
+                  IdentityFile $HOME/.ssh/jumpbox.pem
+                  ProxyJump ${JUMPBOX_IP}
+                  StrictHostKeyChecking no
+                  UserKnownHostsFile /dev/null
+
+                Host jumpbox
+                  User ${JUMPBOX_USERNAME}
+                  Hostname ${JUMPBOX_IP}
+                  Port 22
+                  IdentityFile $HOME/.ssh/jumpbox.pem
+                  StrictHostKeyChecking no
+                  UserKnownHostsFile /dev/null
+                SSHCONF
+
+                export AGENT_IP="${agent_ip}"
+                echo "Running NATS firewall integration tests..."
+                go run github.com/onsi/ginkgo/v2/ginkgo --focus "nats firewall" --trace integration
+
+        ensure:
+          task: cleanup
+          image: bosh-agent-registry-image
+          config:
+            platform: linux
+            params:
+              BOSH_ENVIRONMENT: https://10.246.0.10:25555
+              BOSH_CLIENT: admin
+              BOSH_CLIENT_SECRET: dxbkikambgqri2vmhlpm
+              BOSH_CA_CERT: |
+                -----BEGIN CERTIFICATE-----
+                MIIEUjCCArqgAwIBAgIRAMzfh4nFn0+ahJ3fNbx1T9AwDQYJKoZIhvcNAQELBQAw
+                MjELMAkGA1UEBhMCVVMxFjAUBgNVBAoTDUNsb3VkIEZvdW5kcnkxCzAJBgNVBAMT
+                AmNhMB4XDTI2MDExNjEzMzAzNFoXDTI3MDExNjEzMzAzNFowMjELMAkGA1UEBhMC
+                VVMxFjAUBgNVBAoTDUNsb3VkIEZvdW5kcnkxCzAJBgNVBAMTAmNhMIIBojANBgkq
+                hkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0iFvMp7xi2Cnsdqs7MYsQUAmfoVC+/Wr
+                W7ljqc/c3FfMp5xEU431FrAE4o+8RWQ78dytF/DRORvcVnChaDTq+sLMue1/Lt0K
+                7ebgg30SDq5TTjCs/s1rABqxiSzTu5sofRm+BmeZtMq+SwVoUyxxJtYC//ZvmBXF
+                CNzifYHYNTmVN9j7f0A8+zkmxReDXS3r9LR+mQmRam3UshDfJDZQbaCtYVwkZYzR
+                0JDjElppeYDsV6kO46gcLN8yM5W3uGJjHSG/DoLyDlimc7WFu/yriKRBvLRFdjrl
+                pMNOJRwvxqaVcXsfXuqvNHnO7yTLj6MhZPwvzWyyH5/Biljn6g9cKnKRwKesqC2Q
+                HalQ+cv+Z9TMBFw+yXvZh1rZPBG9CgtXsUR4k2o8Gd1lWlwcq8nJ3StQQF987H/c
+                d7Rb/ZRk3NqUR6i47zDo5mevekyShcAuwlPzy4YzlevScRLPycVJ5DKUKvHEegq8
+                jGDy2bkG+6fIgqlhBhiDkIxtSoTn3h31AgMBAAGjYzBhMA4GA1UdDwEB/wQEAwIB
+                BjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQ8HiXnMv0UYdQPP0wS5VgE8vP2
+                uzAfBgNVHSMEGDAWgBQ8HiXnMv0UYdQPP0wS5VgE8vP2uzANBgkqhkiG9w0BAQsF
+                AAOCAYEAIXiBdWPJQQL02vtl5rx5aLoRnZEf7K+60QfgWXKw8zyznB+bIPOhXE5d
+                yUZZ2okYClvScah3SZNoj78zIlydSlmabRCw5sdQMut7LbRxOz2B8JoDpYnmaYrd
+                cal0Ags6VoWpymW/2LhqUGwcmM8U0gD2mdDkIG2T8RXUzEc/Masc5C1Lggr1TA9d
+                PLy8fEWrJUaZZSFOrf3ygyNU32c11vhyF8MWigKEBz5OaUhRQFHcR8lDr0x76DuI
+                vleS91R2uSV99e+ac4WIMChNRJzd4YYv/zOTmicqr0oIhqzwyKhEor/KMHD+HI61
+                W5SuVHBLYhFJ3IHaX4BzLma0wZZkLVylFpooOC1kthVQ5KvOLhB3yScKBaVzMz8f
+                01t4rVBamXI/QV5txiFEVnchzsZ9Xa78CRubW3eAvCZD5XvLG5PCLR1ihgW5HYwt
+                4vXyPvQAZ4nPlFAG8teUPIgrcpPHKSggVYhJN9X8XUNJtWOCGX2zonEtrU8pxkE0
+                TNItownM
+                -----END CERTIFICATE-----
+              BOSH_DEPLOYMENT: bosh-agent-integration-firewall
+            run:
+              path: bash
+              args:
+                - -c
+                - |
+                  set -x
+                  echo "=== Cleanup: Enable resurrection ==="
+                  bosh -n delete-config --name=agent-firewall-resurrection --type=resurrection || true
+
+                  echo "=== Cleanup: Delete deployment ==="
+                  bosh -n delete-deployment || true
+

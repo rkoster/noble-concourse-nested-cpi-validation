@@ -139,3 +139,10 @@ resources:
       uri: https://github.com/rkoster/bosh-agent.git
       branch: feature/agent-managed-firewall
 
+  - name: bosh-agent-registry-image
+    type: registry-image
+    icon: docker
+    source:
+      repository: bosh/agent
+      tag: latest
+

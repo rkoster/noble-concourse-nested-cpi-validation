@@ -70,14 +70,21 @@ build_pipeline() {
   cat "${SCRIPT_DIR}/pipeline-jobs/resources.yml"
   echo ""
   
+  # Add groups section if groups.yml exists
+  if [ -f "${SCRIPT_DIR}/pipeline-jobs/groups.yml" ]; then
+    echo "  Including: groups.yml" >&2
+    cat "${SCRIPT_DIR}/pipeline-jobs/groups.yml"
+    echo ""
+  fi
+  
   # Add jobs section header
   echo "jobs:"
   
   # Combine all job files (alphabetically for consistency)
-  # Skip schema.yml and resources.yml
+  # Skip schema.yml, resources.yml, and groups.yml
   for job_file in "${SCRIPT_DIR}/pipeline-jobs"/*.yml; do
     filename=$(basename "${job_file}")
-    if [[ "${filename}" != "schema.yml" && "${filename}" != "resources.yml" ]]; then
+    if [[ "${filename}" != "schema.yml" && "${filename}" != "resources.yml" && "${filename}" != "groups.yml" ]]; then
       echo "  Including: ${filename}" >&2
       cat "${job_file}"
       echo ""
