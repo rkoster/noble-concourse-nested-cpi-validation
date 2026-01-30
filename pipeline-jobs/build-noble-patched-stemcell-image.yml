@@ -1,12 +1,16 @@
   - name: build-noble-patched-stemcell-image
     plan:
       - in_parallel:
+          - get: bosh-agent-fork
+            trigger: false
           - get: oci-build-task
             trigger: false
-      - task: prepare-inline-dockerfile
+      - task: prepare-build-context
         image: oci-build-task
         config:
           platform: linux
+          inputs:
+            - name: bosh-agent-fork
           outputs:
             - name: build-context
           run:
@@ -15,23 +19,39 @@
               - -exc
               - |
                 set -eu
-                echo "=== Preparing inline Dockerfile to patch stemcell ==="
-                mkdir -p build-context
+                echo "=== Preparing build context with multi-stage Dockerfile ==="
+
+                # Copy agent source to build context
+                cp -r bosh-agent-fork build-context/bosh-agent-fork
+
+                # Create multi-stage Dockerfile
                 cat > build-context/Dockerfile <<'DOCKERFILE'
+                # Stage 1: Build bosh-agent from source
+                FROM golang:1.23 AS builder
+                WORKDIR /build
+                COPY bosh-agent-fork/ .
+                RUN go build -o bosh-agent ./main
+
+                # Stage 2: Create patched stemcell image
                 FROM ghcr.io/cloudfoundry/ubuntu-noble-stemcell:1.199
 
-                # Remove the specific nftables line (line 9) from /etc/nftables/monit.nft
-                RUN if [ -f /etc/nftables/monit.nft ]; then \
-                  sed -i '9d' /etc/nftables/monit.nft || true; \
-                  fi
+                # Copy the newly compiled bosh-agent with nftables firewall management
+                COPY --from=builder /build/bosh-agent /var/vcap/bosh/bin/bosh-agent
+                RUN chmod 755 /var/vcap/bosh/bin/bosh-agent
 
-                # Ensure file permissions remain correct
-                RUN if [ -f /etc/nftables/monit.nft ]; then chmod 644 /etc/nftables/monit.nft || true; fi
+                # Remove the stemcell's monit nftables config - agent now manages firewall at runtime
+                # The agent creates nftables rules via SetupAgentRules() at bootstrap
+                RUN rm -f /etc/nftables/monit.nft /etc/nftables.d/monit.nft 2>/dev/null || true
 
-                LABEL maintainer="noble-concourse"
+                # Remove any nftables loading from monit.service if present
+                RUN sed -i '/nft.*monit/d' /lib/systemd/system/monit.service 2>/dev/null || true
+
+                LABEL maintainer="noble-concourse-testing"
+                LABEL description="Noble stemcell with agent-managed nftables firewall"
                 DOCKERFILE
-                echo "Dockerfile created"
-                ls -la build-context
+
+                echo "=== Build context prepared ==="
+                ls -la build-context/
       - task: build-image
         privileged: true
         image: oci-build-task
@@ -50,7 +70,7 @@
             args:
               - -c
               - |
-                echo "=== Building patched noble stemcell image ==="
+                echo "=== Building patched noble stemcell image with custom agent ==="
                 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
                 exec build
       - put: noble-patched-stemcell-image

@@ -132,3 +132,10 @@ resources:
       uri: https://github.com/rkoster/garden-runc-release.git
       branch: noble-nested-warden
 
+  - name: bosh-agent-fork
+    type: git
+    icon: github
+    source:
+      uri: https://github.com/rkoster/bosh-agent.git
+      branch: feature/agent-managed-firewall
+
