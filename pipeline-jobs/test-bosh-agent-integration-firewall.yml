@@ -215,26 +215,48 @@
                 ssh ${agent_ip} "sudo mv /tmp/bosh-agent /var/vcap/bosh/bin/bosh-agent && sudo chmod +x /var/vcap/bosh/bin/bosh-agent"
 
                 echo "=== 7. Configure agent for NATS firewall ==="
-                ssh ${agent_ip} "sudo sh -c '
-                  if command -v jq >/dev/null 2>&1; then
-                    cp /var/vcap/bosh/agent.json /var/vcap/bosh/agent.json.bak
-                    jq \".Platform.Linux.EnableNATSFirewall = true\" /var/vcap/bosh/agent.json.bak > /var/vcap/bosh/agent.json
-                  else
-                    # Fallback if jq not available - use sed
-                    cp /var/vcap/bosh/agent.json /var/vcap/bosh/agent.json.bak
-                    if grep -q \"EnableNATSFirewall\" /var/vcap/bosh/agent.json; then
-                      sed -i \"s/\\\"EnableNATSFirewall\\\".*false/\\\"EnableNATSFirewall\\\": true/\" /var/vcap/bosh/agent.json
-                    else
-                      # Insert into Platform.Linux section
-                      sed -i \"s/\\\"Linux\\\".*{/\\\"Linux\\\": {\\\"EnableNATSFirewall\\\": true,/\" /var/vcap/bosh/agent.json
-                    fi
-                  fi
-                '"
+                # Use Python to modify agent.json (available on all stemcells, jq is not)
+                # Write a Python script to the VM and execute it
+                cat > /tmp/modify-agent-json.py <<'PYEOF'
+                import json
+                with open("/var/vcap/bosh/agent.json", "r") as f:
+                    config = json.load(f)
+                if "Platform" not in config:
+                    config["Platform"] = {}
+                if "Linux" not in config["Platform"]:
+                    config["Platform"]["Linux"] = {}
+                config["Platform"]["Linux"]["EnableNATSFirewall"] = True
+                with open("/var/vcap/bosh/agent.json", "w") as f:
+                    json.dump(config, f, indent=2)
+                print("EnableNATSFirewall set to true")
+                PYEOF
+                scp /tmp/modify-agent-json.py ${agent_ip}:/tmp/modify-agent-json.py
+                ssh ${agent_ip} "sudo python3 /tmp/modify-agent-json.py"
+
+                # Verify the change
+                echo "Verifying agent.json configuration:"
+                ssh ${agent_ip} "sudo cat /var/vcap/bosh/agent.json"
 
                 # Backup settings for test restoration
                 ssh ${agent_ip} "sudo sh -c 'mkdir -p /settings-backup && cp /var/vcap/bosh/*.json /settings-backup/'"
 
-                echo "=== 8. Run integration tests ==="
+                echo "=== 8. Debug: Check agent can start manually ==="
+                # Install nftables CLI (required for tests to verify firewall rules)
+                # The agent uses netlink for setting up rules, but tests use nft CLI to verify them
+                ssh ${agent_ip} "sudo apt-get update && sudo apt-get install -y nftables"
+                
+                # First, test if the agent can start without issues
+                ssh ${agent_ip} "sudo sv start agent && sleep 3 && sudo sv status agent"
+                ssh ${agent_ip} "sudo tail -50 /var/vcap/bosh/log/current || echo 'No logs yet'"
+                # Check if nftables is available
+                ssh ${agent_ip} "which nft && nft --version || echo 'nft not found'"
+                # Check if nftables table was created by agent
+                ssh ${agent_ip} "sudo nft list tables || echo 'No tables'"
+                ssh ${agent_ip} "sudo nft list table inet bosh_agent || echo 'Table not found'"
+                # Stop agent again so tests can start it fresh
+                ssh ${agent_ip} "sudo sv stop agent || true"
+
+                echo "=== 9. Run integration tests ==="
                 echo "Setting up test environment..."
 
                 cat > integration/ssh-config <<SSHCONF
@@ -257,6 +279,7 @@
                 SSHCONF
 
                 export AGENT_IP="${agent_ip}"
+                
                 echo "Running NATS firewall integration tests..."
                 go run github.com/onsi/ginkgo/v2/ginkgo --focus "nats firewall" --trace integration
 
