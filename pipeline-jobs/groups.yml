@@ -24,6 +24,7 @@ groups:
   - name: bosh-agent-integration-firewall
     jobs:
       - test-bosh-agent-integration-firewall
+      - test-bosh-agent-integration-firewall-noble
 
   - name: all
     jobs:
@@ -38,3 +39,4 @@ groups:
       - deploy-zookeeper-on-warden-runc
       - deploy-zookeeper-on-docker-bosh
       - test-bosh-agent-integration-firewall
+      - test-bosh-agent-integration-firewall-noble

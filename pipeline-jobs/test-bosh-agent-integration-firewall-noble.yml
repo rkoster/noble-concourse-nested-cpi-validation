@@ -1,4 +1,4 @@
-  - name: test-bosh-agent-integration-firewall
+  - name: test-bosh-agent-integration-firewall-noble
     serial: true
     plan:
       - in_parallel:
@@ -44,7 +44,7 @@
               4vXyPvQAZ4nPlFAG8teUPIgrcpPHKSggVYhJN9X8XUNJtWOCGX2zonEtrU8pxkE0
               TNItownM
               -----END CERTIFICATE-----
-            BOSH_DEPLOYMENT: bosh-agent-integration-firewall
+            BOSH_DEPLOYMENT: bosh-agent-integration-firewall-noble
             JUMPBOX_IP: 10.246.0.10
             JUMPBOX_USERNAME: jumpbox
             JUMPBOX_PRIVATE_KEY: |
@@ -89,27 +89,27 @@
                   - enabled: false
                     include:
                       deployments:
-                        - bosh-agent-integration-firewall
+                        - bosh-agent-integration-firewall-noble
                 EOF
-                bosh -n update-config --name=agent-firewall-resurrection \
+                bosh -n update-config --name=agent-firewall-resurrection-noble \
                   --type=resurrection /tmp/resurrection-off.yml
 
                 echo "=== 2. Upload os-conf release ==="
                 # os-conf 23.0.0 is already on the director, skip upload
 
                 echo "=== 3. Deploy test VM ==="
-                # Using Jammy (Ubuntu 22.04) which uses runit for service management.
-                # See test-bosh-agent-integration-firewall-noble.yml for Noble (systemd) validation.
+                # Using Noble (Ubuntu 24.04) to validate systemd-based stemcell support.
+                # Noble uses systemd for service management instead of runit.
                 # Deploy with LXD/incus agent enabled for incus exec access (debugging fallback)
                 # See: https://github.com/a2geek/bosh-lxd-cpi-release/blob/main/manifests/enable-lxd-agent-config.yml
                 cat > /tmp/agent-deployment.yml <<EOF
-                name: bosh-agent-integration-firewall
+                name: bosh-agent-integration-firewall-noble
                 releases:
                   - name: os-conf
                     version: latest
                 stemcells:
                   - alias: stemcell
-                    os: ubuntu-jammy
+                    os: ubuntu-noble
                     version: latest
                 instance_groups:
                   - name: agent-test
@@ -333,7 +333,7 @@
                 4vXyPvQAZ4nPlFAG8teUPIgrcpPHKSggVYhJN9X8XUNJtWOCGX2zonEtrU8pxkE0
                 TNItownM
                 -----END CERTIFICATE-----
-              BOSH_DEPLOYMENT: bosh-agent-integration-firewall
+              BOSH_DEPLOYMENT: bosh-agent-integration-firewall-noble
             run:
               path: bash
               args:
@@ -341,7 +341,7 @@
                 - |
                   set -x
                   echo "=== Cleanup: Enable resurrection ==="
-                  bosh -n delete-config --name=agent-firewall-resurrection --type=resurrection || true
+                  bosh -n delete-config --name=agent-firewall-resurrection-noble --type=resurrection || true
 
                   echo "=== Cleanup: Delete deployment ==="
                   bosh -n delete-deployment || true
