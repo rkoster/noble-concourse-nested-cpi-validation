@@ -25,27 +25,37 @@
                 cp -r bosh-agent-fork build-context/bosh-agent-fork
 
                 # Create base firewall rules file
-                # This blocks outbound access to monit API and NATS by default
+                # This only blocks outbound access to monit API by default
                 # The agent will add exceptions for allowed cgroups at runtime
+                #
+                # NOTE: NATS firewall is NOT in the base rules. The agent dynamically adds
+                # a rule that blocks ONLY the director's NATS IP (not all port 4222 traffic).
+                # This is because other NATS servers (e.g., CF's internal NATS) must remain
+                # accessible. The NATS firewall protects against metadata service attacks
+                # where malicious workloads could extract NATS client certs and connect to
+                # the director's NATS to impersonate agents.
                 cat > build-context/base-firewall.nft <<'NFTABLES'
                 #!/usr/sbin/nft -f
                 #
                 # BOSH Base Firewall Rules
                 #
-                # This file sets up the base nftables rules that block access to sensitive
-                # BOSH services by default. The bosh-agent will dynamically add rules to
-                # allow specific cgroups (agent, monit) to access these services.
+                # This file sets up the base nftables rules that block access to the
+                # monit HTTP API by default. The bosh-agent will dynamically add rules
+                # to allow specific cgroups (agent, monit) to access this service.
                 #
-                # Protected ports (outbound only):
-                # - 2822: monit HTTP API (localhost only, internal service)
-                # - 4222: NATS messaging (outbound to director)
+                # Protected ports (outbound to localhost only):
+                # - 2822: monit HTTP API (internal service, must be protected)
+                #
+                # NOT in base rules (agent manages dynamically):
+                # - NATS: Agent adds rules for specific director IP only, not all port 4222
+                #   This allows CF NATS and other NATS servers to remain accessible
                 #
                 # NOT blocked:
-                # - Incoming traffic (needed for bosh create-env, agent API, NATS server on director)
+                # - Incoming traffic (needed for bosh create-env, agent API, etc.)
                 #
 
                 table inet bosh_firewall {
-                  # Chain for filtering outbound connections to BOSH services
+                  # Chain for filtering outbound connections to monit
                   chain output_filter {
                     type filter hook output priority 0; policy accept;
 
@@ -55,11 +65,6 @@
                     # Block outbound access to monit API on localhost by default
                     # The agent will add exceptions for its own cgroup
                     ip daddr 127.0.0.1 tcp dport 2822 drop
-
-                    # Block outbound access to NATS port by default
-                    # The agent will add exceptions for its own cgroup when EnableNATSFirewall is true
-                    # This blocks connections to ANY destination on port 4222
-                    tcp dport 4222 drop
                   }
                 }
                 NFTABLES
