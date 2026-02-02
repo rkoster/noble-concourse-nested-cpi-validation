@@ -9,41 +9,6 @@
             params:
               submodules: all
 
-      - task: build-garden-runc-dev-release
-        image: bosh-agent-registry-image
-        config:
-          platform: linux
-          inputs:
-            - name: garden-runc-release
-          outputs:
-            - name: garden-runc-dev-release
-          run:
-            path: bash
-            args:
-              - -c
-              - |
-                set -euo pipefail
-                
-                echo "=== Building garden-runc dev release with patched guardian ==="
-                
-                cd garden-runc-release
-                
-                # Submodules are already fetched by Concourse (submodules: all)
-                # The guardian submodule points to rkoster/guardian noble-nested-warden branch
-                
-                # Verify the patch is present
-                echo "Verifying guardian patch..."
-                grep -q "Loop devices" src/guardian/guardiancmd/server.go && \
-                  echo "Guardian loop device patch found!" || \
-                  { echo "ERROR: Guardian patch not found!"; exit 1; }
-                
-                # Create dev release
-                echo "Creating garden-runc dev release..."
-                bosh create-release --force --timestamp-version --tarball=../garden-runc-dev-release/garden-runc-dev.tgz
-                
-                echo "Dev release created:"
-                ls -la ../garden-runc-dev-release/
-
       - task: run-integration-tests
         image: bosh-agent-registry-image
         privileged: true
@@ -51,7 +16,7 @@
           platform: linux
           inputs:
             - name: bosh-agent-fork
-            - name: garden-runc-dev-release
+            - name: garden-runc-release
           params:
             BOSH_ENVIRONMENT: https://10.246.0.10:25555
             BOSH_CLIENT: admin
@@ -133,12 +98,28 @@
                 bosh -n update-config --name=agent-firewall-resurrection \
                   --type=resurrection /tmp/resurrection-off.yml
 
-                echo "=== 2. Upload releases ==="
-                # os-conf 23.0.0 is already on the director, skip upload
+                echo "=== 2. Upload garden-runc release (if needed) ==="
+                # Check if garden-runc release with this commit hash is already uploaded
+                cd garden-runc-release
+                COMMIT_HASH=$(git rev-parse --short HEAD)
+                echo "Garden-runc release commit hash: ${COMMIT_HASH}"
                 
-                # Upload the garden-runc dev release with patched guardian
-                echo "Uploading garden-runc dev release..."
-                bosh upload-release garden-runc-dev-release/garden-runc-dev.tgz
+                # Check if release with this commit hash already exists
+                if bosh releases --json | jq -e ".Tables[0].Rows[] | select(.name == \"garden-runc\") | select(.commit_hash == \"${COMMIT_HASH}\")" > /dev/null 2>&1; then
+                  echo "Garden-runc release with commit ${COMMIT_HASH} already uploaded, skipping build"
+                else
+                  echo "Building and uploading garden-runc dev release..."
+                  
+                  # Verify the guardian patch is present
+                  grep -q "Loop devices" src/guardian/guardiancmd/server.go && \
+                    echo "Guardian loop device patch found!" || \
+                    { echo "ERROR: Guardian patch not found!"; exit 1; }
+                  
+                  # Create and upload dev release
+                  bosh create-release --force --timestamp-version
+                  bosh upload-release
+                fi
+                cd ..
 
                 echo "=== 3. Deploy test VM with Garden ==="
                 # Using Jammy (Ubuntu 22.04) which uses runit for service management.
