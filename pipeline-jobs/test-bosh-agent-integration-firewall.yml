@@ -6,7 +6,6 @@
             trigger: true
           - get: bosh-agent-registry-image
           - get: garden-runc-release
-          - get: guardian-fork
 
       - task: build-garden-runc-dev-release
         image: bosh-agent-registry-image
@@ -14,7 +13,6 @@
           platform: linux
           inputs:
             - name: garden-runc-release
-            - name: guardian-fork
           outputs:
             - name: garden-runc-dev-release
           run:
@@ -28,14 +26,12 @@
                 
                 cd garden-runc-release
                 
-                # Update guardian submodule to use the fork with loop device fix
-                echo "Updating guardian submodule..."
-                rm -rf src/code.cloudfoundry.org/guardian
-                cp -r ../guardian-fork src/code.cloudfoundry.org/guardian
+                # Submodules are already fetched by Concourse (submodules: all)
+                # The guardian submodule points to rkoster/guardian noble-nested-warden branch
                 
                 # Verify the patch is present
                 echo "Verifying guardian patch..."
-                grep -q "Loop devices" src/code.cloudfoundry.org/guardian/guardiancmd/server.go && \
+                grep -q "Loop devices" src/guardian/guardiancmd/server.go && \
                   echo "Guardian loop device patch found!" || \
                   { echo "ERROR: Guardian patch not found!"; exit 1; }
                 
