@@ -5,6 +5,46 @@
           - get: bosh-agent-fork
             trigger: true
           - get: bosh-agent-registry-image
+          - get: garden-runc-release
+          - get: guardian-fork
+
+      - task: build-garden-runc-dev-release
+        image: bosh-agent-registry-image
+        config:
+          platform: linux
+          inputs:
+            - name: garden-runc-release
+            - name: guardian-fork
+          outputs:
+            - name: garden-runc-dev-release
+          run:
+            path: bash
+            args:
+              - -c
+              - |
+                set -euo pipefail
+                
+                echo "=== Building garden-runc dev release with patched guardian ==="
+                
+                cd garden-runc-release
+                
+                # Update guardian submodule to use the fork with loop device fix
+                echo "Updating guardian submodule..."
+                rm -rf src/code.cloudfoundry.org/guardian
+                cp -r ../guardian-fork src/code.cloudfoundry.org/guardian
+                
+                # Verify the patch is present
+                echo "Verifying guardian patch..."
+                grep -q "Loop devices" src/code.cloudfoundry.org/guardian/guardiancmd/server.go && \
+                  echo "Guardian loop device patch found!" || \
+                  { echo "ERROR: Guardian patch not found!"; exit 1; }
+                
+                # Create dev release
+                echo "Creating garden-runc dev release 1.83.0+dev.1..."
+                bosh create-release --force --version=1.83.0+dev.1 --tarball=../garden-runc-dev-release/garden-runc-1.83.0+dev.1.tgz
+                
+                echo "Dev release created:"
+                ls -la ../garden-runc-dev-release/
 
       - task: run-integration-tests
         image: bosh-agent-registry-image
@@ -13,6 +53,7 @@
           platform: linux
           inputs:
             - name: bosh-agent-fork
+            - name: garden-runc-dev-release
           params:
             BOSH_ENVIRONMENT: https://10.246.0.10:25555
             BOSH_CLIENT: admin
@@ -94,19 +135,24 @@
                 bosh -n update-config --name=agent-firewall-resurrection \
                   --type=resurrection /tmp/resurrection-off.yml
 
-                echo "=== 2. Upload os-conf release ==="
+                echo "=== 2. Upload releases ==="
                 # os-conf 23.0.0 is already on the director, skip upload
+                
+                # Upload the garden-runc dev release with patched guardian
+                echo "Uploading garden-runc 1.83.0+dev.1 release..."
+                bosh upload-release garden-runc-dev-release/garden-runc-1.83.0+dev.1.tgz
 
-                echo "=== 3. Deploy test VM ==="
+                echo "=== 3. Deploy test VM with Garden ==="
                 # Using Jammy (Ubuntu 22.04) which uses runit for service management.
                 # See test-bosh-agent-integration-firewall-noble.yml for Noble (systemd) validation.
-                # Deploy with LXD/incus agent enabled for incus exec access (debugging fallback)
-                # See: https://github.com/a2geek/bosh-lxd-cpi-release/blob/main/manifests/enable-lxd-agent-config.yml
+                # Deploy with Garden for nested container firewall testing
                 cat > /tmp/agent-deployment.yml <<EOF
                 name: bosh-agent-integration-firewall
                 releases:
                   - name: os-conf
                     version: latest
+                  - name: garden-runc
+                    version: 1.83.0+dev.1
                 stemcells:
                   - alias: stemcell
                     os: ubuntu-jammy
@@ -127,6 +173,14 @@
                             # Create agent_test_user for integration tests
                             - name: agent_test_user
                               public_key: "${JUMPBOX_PUBLIC_KEY}"
+                      - name: garden
+                        release: garden-runc
+                        properties:
+                          garden:
+                            listen_network: tcp
+                            listen_address: 0.0.0.0:7777
+                            allow_host_access: true
+                            containerd_mode: false
                       - name: pre-start-script
                         release: os-conf
                         properties:
@@ -270,7 +324,26 @@
                     ssh ${agent_ip} "sudo sv stop agent" || true
                 fi
 
-                echo "=== 9. Run integration tests ==="
+                echo "=== 9. Verify Garden-runc is running ==="
+                # Garden was deployed via BOSH with the patched guardian (1.83.0+dev.1)
+                # that includes loop device access for privileged containers
+                
+                echo "Checking Garden daemon status..."
+                ssh ${agent_ip} "sudo /var/vcap/bosh/bin/monit summary" || true
+                
+                # Verify Garden is listening
+                echo "Verifying Garden is listening on port 7777..."
+                ssh ${agent_ip} "curl -s http://localhost:7777/ping" || {
+                  echo "Garden ping failed, checking logs..."
+                  ssh ${agent_ip} "sudo tail -50 /var/vcap/sys/log/garden/*.log" || true
+                  exit 1
+                }
+                
+                # Export Garden address for tests
+                GARDEN_ADDRESS="${agent_ip}:7777"
+                echo "Garden address: ${GARDEN_ADDRESS}"
+
+                echo "=== 10. Run integration tests ==="
                 echo "Setting up test environment..."
 
                 cat > integration/ssh-config <<SSHCONF
@@ -293,9 +366,16 @@
                 SSHCONF
 
                 export AGENT_IP="${agent_ip}"
+                export GARDEN_ADDRESS="${GARDEN_ADDRESS}"
+                export JUMPBOX_IP="${JUMPBOX_IP}"
+                export JUMPBOX_USERNAME="${JUMPBOX_USERNAME}"
+                export JUMPBOX_KEY_PATH="$HOME/.ssh/jumpbox.pem"
                 
                 echo "Running NATS firewall integration tests..."
                 go run github.com/onsi/ginkgo/v2/ginkgo --focus "nats firewall" --trace integration
+                
+                echo "Running Garden container firewall integration tests..."
+                go run github.com/onsi/ginkgo/v2/ginkgo --focus "garden container firewall" --trace integration
 
         ensure:
           task: cleanup

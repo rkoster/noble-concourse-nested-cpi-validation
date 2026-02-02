@@ -76,6 +76,44 @@ bosh -d concourse ssh -c "sudo tail -100 /var/vcap/sys/log/worker/worker.stderr.
 bosh -d concourse delete-deployment -n
 ```
 
+### Debugging Unresponsive VMs
+
+When a BOSH agent becomes unresponsive (e.g., agent crashes, firewall blocks NATS), BOSH commands like `bosh ssh` will fail. Use these steps to debug and recover:
+
+```bash
+# 1. Check VM status - look for "unresponsive agent"
+bosh -d <deployment> vms
+
+# 2. Get the VM CID for the unresponsive instance
+bosh -d <deployment> vms --json | jq -r '.Tables[0].Rows[0].vm_cid'
+
+# 3. SSH directly to the VM (bypassing BOSH agent)
+# For VMs with os-conf user setup:
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  -i jumpbox-private-key.pem agent_test_user@<vm_ip>
+
+# 4. Debug the agent on the VM
+sudo systemctl status bosh-agent           # Check agent status (Noble/systemd)
+sudo sv status agent                        # Check agent status (Jammy/runit)
+sudo journalctl -u bosh-agent --no-pager -n 100  # View agent logs (Noble)
+sudo tail -100 /var/vcap/bosh/log/current   # View agent logs (Jammy)
+
+# 5. If agent can't be recovered, force delete via incus and BOSH
+# Find the VM in incus
+incus list | grep <vm_cid>
+
+# Force delete the VM from incus
+incus delete <vm_cid> --force
+
+# Force delete the deployment from BOSH (skips agent communication)
+bosh -d <deployment> delete-deployment -n --force
+```
+
+**Common causes of unresponsive agents:**
+- Agent crash during bootstrap (e.g., auditd failure on Noble when `/var/log/audit` missing)
+- NATS firewall blocking director communication
+- Corrupt agent settings or missing dependencies
+
 ### Testing
 
 ```bash
