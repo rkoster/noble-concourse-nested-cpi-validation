@@ -38,8 +38,8 @@
                   { echo "ERROR: Guardian patch not found!"; exit 1; }
                 
                 # Create dev release
-                echo "Creating garden-runc dev release 1.83.0+dev.1..."
-                bosh create-release --force --version=1.83.0+dev.1 --tarball=../garden-runc-dev-release/garden-runc-1.83.0+dev.1.tgz
+                echo "Creating garden-runc dev release..."
+                bosh create-release --force --timestamp-version --tarball=../garden-runc-dev-release/garden-runc-dev.tgz
                 
                 echo "Dev release created:"
                 ls -la ../garden-runc-dev-release/
@@ -137,8 +137,8 @@
                 # os-conf 23.0.0 is already on the director, skip upload
                 
                 # Upload the garden-runc dev release with patched guardian
-                echo "Uploading garden-runc 1.83.0+dev.1 release..."
-                bosh upload-release garden-runc-dev-release/garden-runc-1.83.0+dev.1.tgz
+                echo "Uploading garden-runc dev release..."
+                bosh upload-release garden-runc-dev-release/garden-runc-dev.tgz
 
                 echo "=== 3. Deploy test VM with Garden ==="
                 # Using Jammy (Ubuntu 22.04) which uses runit for service management.
@@ -150,7 +150,7 @@
                   - name: os-conf
                     version: latest
                   - name: garden-runc
-                    version: 1.83.0+dev.1
+                    version: latest
                 stemcells:
                   - alias: stemcell
                     os: ubuntu-jammy
@@ -323,7 +323,7 @@
                 fi
 
                 echo "=== 9. Verify Garden-runc is running ==="
-                # Garden was deployed via BOSH with the patched guardian (1.83.0+dev.1)
+                # Garden was deployed via BOSH with the patched guardian
                 # that includes loop device access for privileged containers
                 
                 echo "Checking Garden daemon status..."
