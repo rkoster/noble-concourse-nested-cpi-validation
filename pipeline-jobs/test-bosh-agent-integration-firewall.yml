@@ -6,6 +6,8 @@
             trigger: true
           - get: bosh-agent-registry-image
           - get: garden-runc-release
+            params:
+              submodules: all
 
       - task: build-garden-runc-dev-release
         image: bosh-agent-registry-image
