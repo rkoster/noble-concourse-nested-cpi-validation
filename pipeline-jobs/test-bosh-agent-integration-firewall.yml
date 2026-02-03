@@ -350,11 +350,8 @@
                 export JUMPBOX_USERNAME="${JUMPBOX_USERNAME}"
                 export JUMPBOX_KEY_PATH="$HOME/.ssh/jumpbox.pem"
                 
-                echo "Running NATS firewall integration tests..."
-                go run github.com/onsi/ginkgo/v2/ginkgo --focus "nats firewall" --trace integration
-                
-                echo "Running Garden container firewall integration tests..."
-                go run github.com/onsi/ginkgo/v2/ginkgo --focus "garden container firewall" --trace integration
+                echo "Running firewall integration tests (NATS and Garden container)..."
+                go run github.com/onsi/ginkgo/v2/ginkgo --focus "firewall" --trace -v integration
 
         ensure:
           task: cleanup
