@@ -137,7 +137,7 @@ resources:
     icon: github
     source:
       uri: https://github.com/rkoster/bosh-agent.git
-      branch: feature/agent-managed-firewall
+      branch: feature/uid-based-firewall
 
   - name: bosh-agent-registry-image
     type: registry-image

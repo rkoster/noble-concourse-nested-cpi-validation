@@ -152,13 +152,13 @@
 
                 # Install base firewall rules that block monit and NATS access by default
                 # The agent's SetupAgentRules() will add exceptions at runtime
-                RUN mkdir -p /etc/nftables
-                COPY base-firewall.nft /etc/nftables/bosh-base.nft
-                RUN chmod 644 /etc/nftables/bosh-base.nft
+                # RUN mkdir -p /etc/nftables
+                # COPY base-firewall.nft /etc/nftables/bosh-base.nft
+                # RUN chmod 644 /etc/nftables/bosh-base.nft
 
                 # Install systemd service to load base firewall at boot
-                COPY bosh-base-firewall.service /lib/systemd/system/bosh-base-firewall.service
-                RUN systemctl enable bosh-base-firewall.service
+                # COPY bosh-base-firewall.service /lib/systemd/system/bosh-base-firewall.service
+                # RUN systemctl enable bosh-base-firewall.service
 
                 LABEL maintainer="noble-concourse-testing"
                 LABEL description="Noble stemcell with agent-managed nftables firewall (NATS firewall enabled)"
